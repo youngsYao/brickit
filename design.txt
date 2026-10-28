@@ -1,0 +1,3 @@
+Visual thesis: an editorial, warm-ivory brick studio, with precise orange controls and a richly lit, tactile red apple as the central object.
+Content plan: compact studio navigation; model title and build controls; full interactive canvas; layer timeline; on-demand parts inventory and build guide.
+Interaction thesis: a staggered entrance; physical piece assembly and exploded transitions; direct orbit control with tactile buttons and color changes.

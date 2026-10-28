@@ -1,0 +1,6 @@
+node_modules/
+.openai/*.local.*
+.openai/execution-profile.json
+*.tgz
+*.tar.gz
+.DS_Store

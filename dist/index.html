@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f6f2">
+  <meta name="description" content="用一块块乐高风格积木，搭建一颗苹果。自由旋转 3D 模型、探索配色，跟随十个步骤完成你的作品。">
+  <title>一颗苹果 · brick. 创意搭建工作室</title>
+  <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg">
+  <link rel="preload" as="font" type="font/woff2" href="./assets/fonts/outfit-latin-wght-normal.woff2" crossorigin>
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">{"imports":{"three":"./assets/vendor/three.module.js"}}</script>
+</head>
+<body>
+  <svg class="svg-defs" aria-hidden="true"><defs id="icon-defs"><symbol id="i-bookmark-simple" viewBox="0 0 256 256"><path d="M184,32H72A16,16,0,0,0,56,48V224a8,8,0,0,0,12.24,6.78L128,193.43l59.77,37.35A8,8,0,0,0,200,224V48A16,16,0,0,0,184,32Zm0,177.57-51.77-32.35a8,8,0,0,0-8.48,0L72,209.57V48H184Z"/></symbol><symbol id="i-caret-right" viewBox="0 0 256 256"><path d="M181.66,133.66l-80,80a8,8,0,0,1-11.32-11.32L164.69,128,90.34,53.66a8,8,0,0,1,11.32-11.32l80,80A8,8,0,0,1,181.66,133.66Z"/></symbol><symbol id="i-check" viewBox="0 0 256 256"><path d="M229.66,77.66l-128,128a8,8,0,0,1-11.32,0l-56-56a8,8,0,0,1,11.32-11.32L96,188.69,218.34,66.34a8,8,0,0,1,11.32,11.32Z"/></symbol><symbol id="i-stack-plus" viewBox="0 0 256 256"><path d="M230.91,124A8,8,0,0,1,228,134.91l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,36,121.09l92,53.65,92-53.65A8,8,0,0,1,230.91,124ZM24,80a8,8,0,0,1,4-6.91l96-56a8,8,0,0,1,8.06,0l96,56a8,8,0,0,1,0,13.82l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,24,80Zm23.88,0L128,126.74,208.12,80,128,33.26ZM232,192H216V176a8,8,0,0,0-16,0v16H184a8,8,0,0,0,0,16h16v16a8,8,0,0,0,16,0V208h16a8,8,0,0,0,0-16Zm-92,23.76-12,7L36,169.09A8,8,0,0,0,28,182.91l96,56a8,8,0,0,0,8.06,0l16-9.33A8,8,0,1,0,140,215.76Z"/></symbol><symbol id="i-arrow-up-right" viewBox="0 0 256 256"><path d="M200,64V168a8,8,0,0,1-16,0V83.31L69.66,197.66a8,8,0,0,1-11.32-11.32L172.69,72H88a8,8,0,0,1,0-16H192A8,8,0,0,1,200,64Z"/></symbol><symbol id="i-play" viewBox="0 0 256 256"><path d="M232.4,114.49,88.32,26.35a16,16,0,0,0-16.2-.3A15.86,15.86,0,0,0,64,39.87V216.13A15.94,15.94,0,0,0,80,232a16.07,16.07,0,0,0,8.36-2.35L232.4,141.51a15.81,15.81,0,0,0,0-27ZM80,215.94V40l143.83,88Z"/></symbol><symbol id="i-pause" viewBox="0 0 256 256"><path d="M200,32H160a16,16,0,0,0-16,16V208a16,16,0,0,0,16,16h40a16,16,0,0,0,16-16V48A16,16,0,0,0,200,32Zm0,176H160V48h40ZM96,32H56A16,16,0,0,0,40,48V208a16,16,0,0,0,16,16H96a16,16,0,0,0,16-16V48A16,16,0,0,0,96,32Zm0,176H56V48H96Z"/></symbol><symbol id="i-sparkle" viewBox="0 0 256 256"><path d="M197.58,129.06,146,110l-19-51.62a15.92,15.92,0,0,0-29.88,0L78,110l-51.62,19a15.92,15.92,0,0,0,0,29.88L78,178l19,51.62a15.92,15.92,0,0,0,29.88,0L146,178l51.62-19a15.92,15.92,0,0,0,0-29.88ZM137,164.22a8,8,0,0,0-4.74,4.74L112,223.85,91.78,169A8,8,0,0,0,87,164.22L32.15,144,87,123.78A8,8,0,0,0,91.78,119L112,64.15,132.22,119a8,8,0,0,0,4.74,4.74L191.85,144ZM144,40a8,8,0,0,1,8-8h16V16a8,8,0,0,1,16,0V32h16a8,8,0,0,1,0,16H184V64a8,8,0,0,1-16,0V48H152A8,8,0,0,1,144,40ZM248,88a8,8,0,0,1-8,8h-8v8a8,8,0,0,1-16,0V96h-8a8,8,0,0,1,0-16h8V72a8,8,0,0,1,16,0v8h8A8,8,0,0,1,248,88Z"/></symbol><symbol id="i-arrow-up-left" viewBox="0 0 256 256"><path d="M197.66,197.66a8,8,0,0,1-11.32,0L72,83.31V168a8,8,0,0,1-16,0V64a8,8,0,0,1,8-8H168a8,8,0,0,1,0,16H83.31L197.66,186.34A8,8,0,0,1,197.66,197.66Z"/></symbol><symbol id="i-arrows-clockwise" viewBox="0 0 256 256"><path d="M224,48V96a8,8,0,0,1-8,8H168a8,8,0,0,1,0-16h28.69L182.06,73.37a79.56,79.56,0,0,0-56.13-23.43h-.45A79.52,79.52,0,0,0,69.59,72.71,8,8,0,0,1,58.41,61.27a96,96,0,0,1,135,.79L208,76.69V48a8,8,0,0,1,16,0ZM186.41,183.29a80,80,0,0,1-112.47-.66L59.31,168H88a8,8,0,0,0,0-16H40a8,8,0,0,0-8,8v48a8,8,0,0,0,16,0V179.31l14.63,14.63A95.43,95.43,0,0,0,130,222.06h.53a95.36,95.36,0,0,0,67.07-27.33,8,8,0,0,0-11.18-11.44Z"/></symbol><symbol id="i-stack" viewBox="0 0 256 256"><path d="M230.91,172A8,8,0,0,1,228,182.91l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,36,169.09l92,53.65,92-53.65A8,8,0,0,1,230.91,172ZM220,121.09l-92,53.65L36,121.09A8,8,0,0,0,28,134.91l96,56a8,8,0,0,0,8.06,0l96-56A8,8,0,1,0,220,121.09ZM24,80a8,8,0,0,1,4-6.91l96-56a8,8,0,0,1,8.06,0l96,56a8,8,0,0,1,0,13.82l-96,56a8,8,0,0,1-8.06,0l-96-56A8,8,0,0,1,24,80Zm23.88,0L128,126.74,208.12,80,128,33.26Z"/></symbol><symbol id="i-plus" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H136v80a8,8,0,0,1-16,0V136H40a8,8,0,0,1,0-16h80V40a8,8,0,0,1,16,0v80h80A8,8,0,0,1,224,128Z"/></symbol><symbol id="i-minus" viewBox="0 0 256 256"><path d="M224,128a8,8,0,0,1-8,8H40a8,8,0,0,1,0-16H216A8,8,0,0,1,224,128Z"/></symbol><symbol id="i-corners-out" viewBox="0 0 256 256"><path d="M216,48V88a8,8,0,0,1-16,0V56H168a8,8,0,0,1,0-16h40A8,8,0,0,1,216,48ZM88,200H56V168a8,8,0,0,0-16,0v40a8,8,0,0,0,8,8H88a8,8,0,0,0,0-16Zm120-40a8,8,0,0,0-8,8v32H168a8,8,0,0,0,0,16h40a8,8,0,0,0,8-8V168A8,8,0,0,0,208,160ZM88,40H48a8,8,0,0,0-8,8V88a8,8,0,0,0,16,0V56H88a8,8,0,0,0,0-16Z"/></symbol><symbol id="i-hand-grabbing" viewBox="0 0 256 256"><path d="M188,80a27.79,27.79,0,0,0-13.36,3.4,28,28,0,0,0-46.64-11A28,28,0,0,0,80,92v20H68a28,28,0,0,0-28,28v12a88,88,0,0,0,176,0V108A28,28,0,0,0,188,80Zm12,72a72,72,0,0,1-144,0V140a12,12,0,0,1,12-12H80v24a8,8,0,0,0,16,0V92a12,12,0,0,1,24,0v28a8,8,0,0,0,16,0V92a12,12,0,0,1,24,0v28a8,8,0,0,0,16,0V108a12,12,0,0,1,24,0Z"/></symbol><symbol id="i-cube" viewBox="0 0 256 256"><path d="M223.68,66.15,135.68,18h0a15.88,15.88,0,0,0-15.36,0l-88,48.17a16,16,0,0,0-8.32,14v95.64a16,16,0,0,0,8.32,14l88,48.17a15.88,15.88,0,0,0,15.36,0l88-48.17a16,16,0,0,0,8.32-14V80.18A16,16,0,0,0,223.68,66.15ZM128,32h0l80.34,44L128,120,47.66,76ZM40,90l80,43.78v85.79L40,175.82Zm96,129.57V133.82L216,90v85.78Z"/></symbol><symbol id="i-arrows-out-simple" viewBox="0 0 256 256"><path d="M216,48V96a8,8,0,0,1-16,0V67.31l-50.34,50.35a8,8,0,0,1-11.32-11.32L188.69,56H160a8,8,0,0,1,0-16h48A8,8,0,0,1,216,48ZM106.34,138.34,56,188.69V160a8,8,0,0,0-16,0v48a8,8,0,0,0,8,8H96a8,8,0,0,0,0-16H67.31l50.35-50.34a8,8,0,0,0-11.32-11.32Z"/></symbol><symbol id="i-arrow-right" viewBox="0 0 256 256"><path d="M221.66,133.66l-72,72a8,8,0,0,1-11.32-11.32L196.69,136H40a8,8,0,0,1,0-16H196.69L138.34,61.66a8,8,0,0,1,11.32-11.32l72,72A8,8,0,0,1,221.66,133.66Z"/></symbol><symbol id="i-arrow-counter-clockwise" viewBox="0 0 256 256"><path d="M224,128a96,96,0,0,1-94.71,96H128A95.38,95.38,0,0,1,62.1,197.8a8,8,0,0,1,11-11.63A80,80,0,1,0,71.43,71.39a3.07,3.07,0,0,1-.26.25L44.59,96H72a8,8,0,0,1,0,16H24a8,8,0,0,1-8-8V56a8,8,0,0,1,16,0V85.8L60.25,60A96,96,0,0,1,224,128Z"/></symbol><symbol id="i-clock" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm64-88a8,8,0,0,1-8,8H128a8,8,0,0,1-8-8V72a8,8,0,0,1,16,0v48h48A8,8,0,0,1,192,128Z"/></symbol><symbol id="i-x" viewBox="0 0 256 256"><path d="M205.66,194.34a8,8,0,0,1-11.32,11.32L128,139.31,61.66,205.66a8,8,0,0,1-11.32-11.32L116.69,128,50.34,61.66A8,8,0,0,1,61.66,50.34L128,116.69l66.34-66.35a8,8,0,0,1,11.32,11.32L139.31,128Z"/></symbol><symbol id="i-info" viewBox="0 0 256 256"><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm0,192a88,88,0,1,1,88-88A88.1,88.1,0,0,1,128,216Zm16-40a8,8,0,0,1-8,8,16,16,0,0,1-16-16V128a8,8,0,0,1,0-16,16,16,0,0,1,16,16v40A8,8,0,0,1,144,176ZM112,84a12,12,0,1,1,12,12A12,12,0,0,1,112,84Z"/></symbol><symbol id="i-download-simple" viewBox="0 0 256 256"><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"/></symbol><symbol id="i-arrow-down" viewBox="0 0 256 256"><path d="M205.66,149.66l-72,72a8,8,0,0,1-11.32,0l-72-72a8,8,0,0,1,11.32-11.32L120,196.69V40a8,8,0,0,1,16,0V196.69l58.34-58.35a8,8,0,0,1,11.32,11.32Z"/></symbol><symbol id="i-lightbulb" viewBox="0 0 256 256"><path d="M176,232a8,8,0,0,1-8,8H88a8,8,0,0,1,0-16h80A8,8,0,0,1,176,232Zm40-128a87.55,87.55,0,0,1-33.64,69.21A16.24,16.24,0,0,0,176,186v6a16,16,0,0,1-16,16H96a16,16,0,0,1-16-16v-6a16,16,0,0,0-6.23-12.66A87.59,87.59,0,0,1,40,104.49C39.74,56.83,78.26,17.14,125.88,16A88,88,0,0,1,216,104Zm-16,0a72,72,0,0,0-73.74-72c-39,.92-70.47,33.39-70.26,72.39a71.65,71.65,0,0,0,27.64,56.3A32,32,0,0,1,96,186v6h64v-6a32.15,32.15,0,0,1,12.47-25.35A71.65,71.65,0,0,0,200,104Zm-16.11-9.34a57.6,57.6,0,0,0-46.56-46.55,8,8,0,0,0-2.66,15.78c16.57,2.79,30.63,16.85,33.44,33.45A8,8,0,0,0,176,104a9,9,0,0,0,1.35-.11A8,8,0,0,0,183.89,94.66Z"/></symbol><symbol id="i-heart" viewBox="0 0 256 256"><path d="M178,40c-20.65,0-38.73,8.88-50,23.89C116.73,48.88,98.65,40,78,40a62.07,62.07,0,0,0-62,62c0,70,103.79,126.66,108.21,129a8,8,0,0,0,7.58,0C136.21,228.66,240,172,240,102A62.07,62.07,0,0,0,178,40ZM128,214.8C109.74,204.16,32,155.69,32,102A46.06,46.06,0,0,1,78,56c19.45,0,35.78,10.36,42.6,27a8,8,0,0,0,14.8,0c6.82-16.67,23.15-27,42.6-27a46.06,46.06,0,0,1,46,46C224,155.61,146.24,204.15,128,214.8Z"/></symbol><symbol id="i-check-circle" viewBox="0 0 256 256"><path d="M173.66,98.34a8,8,0,0,1,0,11.32l-56,56a8,8,0,0,1-11.32,0l-24-24a8,8,0,0,1,11.32-11.32L112,148.69l50.34-50.35A8,8,0,0,1,173.66,98.34ZM232,128A104,104,0,1,1,128,24,104.11,104.11,0,0,1,232,128Zm-16,0a88,88,0,1,0-88,88A88.1,88.1,0,0,0,216,128Z"/></symbol></defs></svg>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="brick. 工作台首页">
+      <svg class="brand-mark" viewBox="0 0 38 38" aria-hidden="true"><rect x="3" y="8" width="32" height="27" rx="7" fill="currentColor"/><rect x="8" y="3" width="8" height="10" rx="3" fill="currentColor"/><rect x="22" y="3" width="8" height="10" rx="3" fill="currentColor"/><path d="M11 18h3m10 0h3M11 26h3m10 0h3" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>
+      <span class="brand-name">brick<span>.</span></span><span class="brand-divider"></span><span class="brand-caption">创意搭建工作室</span>
+    </a>
+    <nav class="main-nav" aria-label="主导航">
+      <button class="nav-link active" data-action="workspace">搭建工作台<span class="nav-dot"></span></button>
+      <button class="nav-link" data-action="parts">零件清单</button>
+      <button class="nav-link" data-action="guide">搭建指南</button>
+    </nav>
+    <button class="save-button" id="save-button"><svg class="icon"><use href="#i-bookmark-simple"/></svg><span>保存作品</span></button>
+  </header>
+
+  <main>
+    <div class="breadcrumbs"><span>创意工坊</span><svg class="icon"><use href="#i-caret-right"/></svg><span>水果系列</span><svg class="icon"><use href="#i-caret-right"/></svg><span class="current">一颗苹果</span></div>
+    <section class="workspace" aria-labelledby="main-title">
+      <div class="intro">
+        <div class="collection"><span></span>THE EVERYDAY COLLECTION<span class="collection-number">/ 001</span></div>
+        <h1 id="main-title">一颗苹果，<br>一块块<span class="title-last">搭</span>出来<span class="title-period">。</span></h1>
+        <p class="intro-description">把日常的小美好，握在手心里。<br>用简单的积木，搭出不简单的想象。</p>
+        <div class="model-stats" aria-label="模型信息">
+          <div><button class="parts-stat" data-action="parts" aria-label="查看零件清单"><strong id="total-pieces">—</strong><span>颗积木 <svg class="icon"><use href="#i-arrow-up-right"/></svg></span></button></div>
+          <div><strong>10<span class="unit">步</span></strong><span>慢慢成形</span></div>
+          <div><strong class="difficulty"><i></i><i></i><i></i></strong><span>新手友好</span></div>
+        </div>
+        <div class="color-panel">
+          <div class="color-heading"><span>选一颗，你的苹果</span><span id="color-name">经典红</span></div>
+          <div class="swatch-row" role="group" aria-label="苹果配色">
+            <button class="color-swatch selected" data-color="red" style="--swatch:#c9362f" aria-label="经典红" aria-pressed="true"><svg class="icon"><use href="#i-check"/></svg></button>
+            <button class="color-swatch" data-color="green" style="--swatch:#8f9f51" aria-label="青苹果" aria-pressed="false"><svg class="icon"><use href="#i-check"/></svg></button>
+            <button class="color-swatch" data-color="yellow" style="--swatch:#e8b94d" aria-label="阳光黄" aria-pressed="false"><svg class="icon"><use href="#i-check"/></svg></button>
+            <span class="color-caption">一点颜色，一点个性。</span>
+          </div>
+        </div>
+        <div class="build-actions">
+          <button class="primary-button" id="build-button"><svg class="icon"><use href="#i-stack-plus"/></svg><span>开始搭建</span><svg class="icon arrow"><use href="#i-arrow-up-right"/></svg></button>
+          <button class="auto-button" id="auto-button"><svg class="icon"><use href="#i-play"/></svg><span>自动演示</span></button>
+        </div>
+        <div class="little-note"><svg class="icon"><use href="#i-sparkle"/></svg><span>小小积木，大大想象。</span></div>
+      </div>
+
+      <div class="stage" id="stage">
+        <div class="stage-top"><span class="model-number">APPLE — 001</span><span class="preview-badge"><i></i><span id="preview-label">3D 实时预览</span></span></div>
+        <div class="stage-watermark" aria-hidden="true">apple.</div>
+        <div id="scene" class="scene" role="img" aria-busy="true" aria-label="可交互的三维积木苹果，拖动旋转，滚轮缩放" tabindex="0"></div>
+        <div class="loading-state" id="loading-state"><span class="loading-brick"><i></i><i></i></span><span>正在准备积木…</span></div>
+        <div class="model-caption"><span class="caption-line"></span><span>好创意，从一块开始。</span><svg class="icon"><use href="#i-arrow-up-left"/></svg></div>
+        <div class="canvas-tools" role="group" aria-label="模型视图工具">
+          <button class="tool-button" id="rotate-button" aria-label="自动旋转" aria-pressed="false" data-tooltip="自动旋转"><svg class="icon"><use href="#i-arrows-clockwise"/></svg></button>
+          <button class="tool-button" id="explode-button" aria-label="拆分模型" aria-pressed="false" data-tooltip="拆分模型"><svg class="icon"><use href="#i-stack"/></svg></button>
+          <span class="tool-divider"></span>
+          <button class="tool-button" id="zoom-in" aria-label="放大" data-tooltip="放大"><svg class="icon"><use href="#i-plus"/></svg></button>
+          <button class="tool-button" id="zoom-out" aria-label="缩小" data-tooltip="缩小"><svg class="icon"><use href="#i-minus"/></svg></button>
+          <span class="tool-divider"></span>
+          <button class="tool-button" id="reset-view" aria-label="重置视角" data-tooltip="重置视角"><svg class="icon"><use href="#i-corners-out"/></svg></button>
+        </div>
+        <div class="stage-bottom"><span class="drag-tip"><svg class="icon"><use href="#i-hand-grabbing"/></svg>拖动旋转<span class="tip-dot">·</span>滚轮缩放</span><button class="view-toggle" id="view-toggle"><svg class="icon"><use href="#i-cube"/></svg><span>完整模型</span><svg class="icon caret"><use href="#i-arrows-out-simple"/></svg></button></div>
+      </div>
+    </section>
+
+    <section class="build-timeline" aria-label="分步搭建">
+      <div class="timeline-heading"><div class="timeline-title"><span class="orange-dot"></span><h2>每一步，都离美好更近一点</h2><span class="step-count" id="step-count">准备就绪</span></div><button class="text-button" data-action="guide">查看搭建指南<svg class="icon"><use href="#i-arrow-right"/></svg></button></div>
+      <div class="steps" id="steps"></div>
+      <div class="build-status" aria-live="polite"><span id="build-status">从稳固的基座，到最后一片绿叶。</span><button id="reset-build" class="reset-build" hidden><svg class="icon"><use href="#i-arrow-counter-clockwise"/></svg>重新开始</button><span class="timeline-meta"><svg class="icon"><use href="#i-clock"/></svg>大约 5 分钟，享受专注的快乐</span></div>
+    </section>
+  </main>
+
+  <footer><span>SMALL BRICKS. BIG IDEAS.</span><span>为每一个有好奇心的你而造<span class="footer-plus">＋</span><span class="footer-year">2026</span></span></footer>
+
+  <dialog id="parts-dialog" aria-labelledby="parts-title" class="studio-dialog">
+    <div class="dialog-top"><span class="eyebrow">YOUR BRICK TOOLKIT</span><button class="close-button" data-close aria-label="关闭零件清单"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <h2 id="parts-title">好作品，从备齐零件开始。</h2><p class="dialog-description">这颗苹果需要 <strong id="parts-total">—</strong> 颗积木。以下数量与当前 3D 模型一致。</p>
+    <div id="parts-list" class="parts-list"></div>
+    <div class="dialog-footnote"><svg class="icon"><use href="#i-info"/></svg>创意数字模型，非官方乐高套装；零件按模型尺寸分类。</div>
+    <button class="primary-button dialog-primary" id="download-parts"><svg class="icon"><use href="#i-download-simple"/></svg>下载零件清单<svg class="icon arrow"><use href="#i-arrow-down"/></svg></button>
+  </dialog>
+
+  <dialog id="guide-dialog" aria-labelledby="guide-title" class="studio-dialog guide-dialog">
+    <div class="dialog-top"><span class="eyebrow">ONE BRICK AT A TIME</span><button class="close-button" data-close aria-label="关闭搭建指南"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <h2 id="guide-title">一颗苹果，十个小步骤。</h2><p class="dialog-description">点击任一步骤，查看这一层。也可以用键盘 ← → 逐步搭建。</p>
+    <div id="guide-list" class="guide-list"></div>
+    <div class="guide-tip"><svg class="icon"><use href="#i-lightbulb"/></svg>试试拆分视图，看看积木之间是如何连接的。</div>
+  </dialog>
+
+  <dialog id="complete-dialog" aria-labelledby="complete-title" class="studio-dialog complete-dialog">
+    <div class="dialog-top"><span class="eyebrow">MADE BY YOU</span><button class="close-button" data-close aria-label="关闭完成提示"><svg class="icon"><use href="#i-x"/></svg></button></div>
+    <div class="complete-illustration" aria-hidden="true"><span class="complete-circle"><svg><use href="#i-check"/></svg></span><i></i><i></i><i></i><i></i></div>
+    <h2 id="complete-title">这颗苹果，你搭的。</h2><p class="dialog-description">一块块小积木，成就一份小小的满足。<br>保存作品，让这份创意留下来。</p>
+    <div class="complete-stats"><span><strong id="complete-total">—</strong> 颗积木</span><span><strong>10</strong> 个步骤</span><span><svg class="icon"><use href="#i-heart"/></svg> 满满成就感</span></div>
+    <button class="primary-button dialog-primary" id="complete-save"><svg class="icon"><use href="#i-download-simple"/></svg>保存我的苹果<svg class="icon arrow"><use href="#i-arrow-up-right"/></svg></button>
+    <button class="complete-back" data-close>再欣赏一下</button>
+  </dialog>
+  <div class="toast" id="toast" role="status"><svg class="icon"><use href="#i-check-circle"/></svg><span></span></div>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

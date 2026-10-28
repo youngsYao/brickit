@@ -1,0 +1,8 @@
+{
+  "name": "brick-apple-studio",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "python3 -m http.server 4173 --directory dist", "check": "node --check dist/app.js && node --check dist/model.js" },
+  "dependencies": { "three": "^0.180.0", "@fontsource-variable/outfit": "^5.2.0", "@phosphor-icons/core": "^2.1.1" }
+}
