@@ -1,213 +1,127 @@
+import { CATALOG, COLOR_OPTIONS, UNIT, findPart, createExampleProject, cloneProject, createPiece, inventoryFor, orderPieces, canPlace, library } from './data.js';
+
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const colors = {
-  red:{name:'经典红',svg:'#c9362f',top:'#e45448',side:'#a32927'},
-  green:{name:'青苹果',svg:'#8f9f51',top:'#acbb70',side:'#6f803e'},
-  yellow:{name:'阳光黄',svg:'#e8b94d',top:'#f4d37c',side:'#bd912e'}
-};
-const steps = [
-  {name:'稳固基座',detail:'先拼出小而稳的底部，让苹果站得住。'},
-  {name:'向外延伸',detail:'扩大一圈，留意边缘交错的接缝。'},
-  {name:'初见轮廓',detail:'继续向外铺开，苹果的曲线开始出现。'},
-  {name:'饱满一点',detail:'用交错排列的积木，让果实更牢固。'},
-  {name:'慢慢长大',detail:'沿轮廓拼满这一层，让苹果饱满起来。'},
-  {name:'最宽一层',detail:'来到果实最宽的地方，轮廓更圆润。'},
-  {name:'收拢边缘',detail:'从这里开始向内收，形成圆润肩部。'},
-  {name:'圆润肩部',detail:'再向里收一圈，保留顶部的弧度。'},
-  {name:'顶部收口',detail:'围合顶部，中间留出安装枝干的空位。'},
-  {name:'点睛枝叶',detail:'装上棕色枝干与绿色叶片，苹果完成！'}
-];
-let state = {color:'red',step:null,exploded:false,rotating:false,playing:false,ready:false};
-let model,blueprint=[],inventory=[],autoTimer,completionTimer,toastTimer;
-let saveInFlight=false;
-try {
-  const saved=JSON.parse(localStorage.getItem('brick-apple-save'));
-  if(saved && colors[saved.color])state.color=saved.color;
-}catch{}
+const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const uid = () => `project-${globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2)}`;
+const categoryName = value => ({brick:'标准砖',plate:'薄板',tile:'光面板',slope:'斜坡与弧面',round:'圆形零件',technic:'科技零件',beam:'科技梁',connector:'连接件',decorative:'装饰零件',arch:'拱形零件'}[value] || value);
+const state = {page:'create',project:null,mode:'build',progress:0,playing:false,speed:300,selectedId:null,placementPart:null,placementColor:'#b91620',placementRotation:0,rotating:false,exploded:false,miniSearch:'',catalogSearch:'',catalogCategory:'all',catalogColor:'all',worksSearch:'',worksFilter:'all',projects:[],undo:[],redo:[],referenceImage:null,referenceName:'',camera:null,placementValid:true,initialized:false,busy:false};
+let engine,enginePromise,playTimer,toastTimer,draftTimer,writeQueue=Promise.resolve();
+let previewVersion=0;
 
-function icon(name) {return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`}
-function brickSVG(type='body',w=2,d=2,layer=1,thumbnail=false) {
-  const palette=type==='leaf'?{svg:'#869b56',top:'#b0bf88',side:'#667d42'}:type==='stem'?{svg:'#a38561',top:'#bda382',side:'#80633f'}:colors[state.color];
-  if(!thumbnail) {
-    const scale=Math.min(11,42/(w+d)),height=type==='leaf'?5:10;
-    const project=(x,z)=>[32+(x-z)*scale,27+(x+z)*scale*.48];
-    const a=project(-w/2,-d/2),b=project(w/2,-d/2),c=project(w/2,d/2),e=project(-w/2,d/2);
-    const lower=p=>[p[0],p[1]+height];
-    const polygon=(points,fill)=>`<polygon points="${points.map(p=>p.join(',')).join(' ')}" fill="${fill}"/>`;
-    let drawing=polygon([e,c,lower(c),lower(e)],palette.svg)+polygon([c,b,lower(b),lower(c)],palette.side)+polygon([a,b,c,e],palette.top);
-    for(let x=0;x<w;x++)for(let z=0;z<d;z++) {
-      const [sx,sy]=project(x-(w-1)/2,z-(d-1)/2);
-      drawing+=`<ellipse cx="${sx}" cy="${sy}" rx="${scale*.29}" ry="${scale*.16}" fill="${palette.svg}"/><ellipse cx="${sx}" cy="${sy-1.8}" rx="${scale*.29}" ry="${scale*.16}" fill="${palette.top}"/>`;
-    }
-    return `<svg viewBox="0 0 64 56" aria-hidden="true">${drawing}</svg>`;
-  }
-  const levels=thumbnail?Math.min(4,Math.ceil(layer/2.6)):1;
-  const size=thumbnail?Math.max(12,Math.min(21,12+Math.sin(layer/10*Math.PI)*9)):22;
-  const cx=32,baseY=thumbnail?47:42;
-  let shapes='';
-  for(let n=0;n<levels;n++) {
-    const y=baseY-n*6;
-    const sw=size*(n===levels-1&&layer>7?.82:1);
-    shapes+=`<path d="M${cx-sw},${y-9}l${sw},-10 ${sw},10 -${sw},10Z" fill="${palette.top}"/><path d="M${cx-sw},${y-9}l${sw},10v9l-${sw},-10Z" fill="${palette.svg}"/><path d="M${cx},${y+1}l${sw},-10v9l-${sw},10Z" fill="${palette.side}"/>`;
-    for(const [dx,dz] of [[-5,-5],[5,-5],[-5,3],[5,3]])shapes+=`<ellipse cx="${cx+dx}" cy="${y-9+dz*.5}" rx="3.3" ry="1.8" fill="${palette.svg}"/><ellipse cx="${cx+dx}" cy="${y-10.7+dz*.5}" rx="3.3" ry="1.8" fill="${palette.top}"/>`;
-  }
-  if(thumbnail&&layer===10) shapes+='<path d="M31 18v-6h4v9" stroke="#957347" stroke-width="3" fill="none"/><path d="m33 12 12-6 7 3-12 7Z" fill="#809b4e"/>';
-  return `<svg class="${thumbnail?'step-mini':''}" viewBox="0 0 64 64" aria-hidden="true">${shapes}</svg>`;
+function toast(message,type='success') {const t=$('#toast');if(!t)return;clearTimeout(toastTimer);t.innerHTML=icon(type==='error'?'warning-circle':'check-circle')+`<span>${esc(message)}</span>`;t.classList.add('show');t.dataset.type=type;t.hidden=false;toastTimer=setTimeout(()=>{t.classList.remove('show')},3500)}
+function setBusy(value){state.busy=value;$$('[data-action="save"],[data-action="favorite"],[data-action="export-image"]').forEach(b=>b.disabled=value||!state.project||(b.dataset.action==='save'&&state.page!=='studio'))}
+function colorName(hex){return COLOR_OPTIONS.find(c=>c.hex.toLowerCase()===String(hex).toLowerCase())?.name || hex}
+function tint(hex,amount){let c=String(hex).replace('#','');if(c.length!==6)c='ba342b';const n=parseInt(c,16);const vals=[n>>16,(n>>8)&255,n&255].map(v=>Math.round(Math.min(255,Math.max(0,v+amount))));return '#'+vals.map(v=>v.toString(16).padStart(2,'0')).join('')}
+function partSvg(part,color='#b91620') {
+  const w=Number(part?.w)||2,d=Number(part?.d)||2,shape=part?.shape||'brick';
+  const scale=Math.min(13,63/(w+d)),height=['plate','tile'].includes(shape)?5:shape==='connector'?8:12;
+  const p=(x,z)=>[52+(x-z)*scale,30+(x+z)*scale*.46];
+  const a=p(-w/2,-d/2),b=p(w/2,-d/2),c=p(w/2,d/2),e=p(-w/2,d/2);const low=v=>[v[0],v[1]+height];
+  const poly=(points,fill)=>`<polygon points="${points.map(q=>q.join(',')).join(' ')}" fill="${fill}"/>`;
+  let body='';
+  if(shape==='round'||shape==='connector'){body=`<path d="M${52-w*scale*.67},30v${height}a${w*scale*.67} ${d*scale*.34} 0 0 0 ${w*scale*1.34},0V30" fill="${tint(color,-16)}"/><ellipse cx="52" cy="30" rx="${w*scale*.67}" ry="${d*scale*.34}" fill="${tint(color,25)}"/>`}
+  else {body=poly([e,c,low(c),low(e)],color)+poly([c,b,low(b),low(c)],tint(color,-23))+poly([a,b,c,e],tint(color,24));if(shape==='slope')body+=poly([e,c,low(b),low(a)],tint(color,8))}
+  if(part?.studs!==false&&shape!=='tile'&&shape!=='slope')for(let x=0;x<w;x++)for(let z=0;z<d;z++){const [sx,sy]=p(x-(w-1)/2,z-(d-1)/2);body+=`<ellipse cx="${sx}" cy="${sy-.5}" rx="${scale*.29}" ry="${scale*.16}" fill="${tint(color,-8)}"/><ellipse cx="${sx}" cy="${sy-2.2}" rx="${scale*.29}" ry="${scale*.16}" fill="${tint(color,30)}"/>`}
+  return `<svg viewBox="0 0 104 76" role="img" aria-label="${esc(part?.name || w+' × '+d+' 积木')}">${body}</svg>`;
 }
-function renderSteps() {
-  $('#steps').innerHTML=steps.map((s,i)=>{
-    const n=i+1,done=state.step!==null&&n<state.step,current=state.step===n;
-    return `<button class="step${done?' done':''}${current?' current':''}" data-step="${n}" aria-label="第 ${n} 步：${s.name}" ${current?'aria-current="step"':''}>${brickSVG(n===10?'leaf':'body',2,2,n,true)}<span class="step-label"><span class="step-index">${String(n).padStart(2,'0')}</span><span class="step-name">${s.name}</span></span>${done?'<svg class="icon step-check"><use href="#i-check"/></svg>':''}</button>`;
-  }).join('');
-  $('#steps').querySelectorAll('[data-step]').forEach(button=>button.addEventListener('click',()=>{stopAuto();setStep(Number(button.dataset.step))}));
+function validImage(src){return typeof src==='string'&&/^data:image\/(png|jpeg|webp|gif);base64,/.test(src)}
+function thumbSrc(project){return validImage(project?.thumbnail)?project.thumbnail:'./assets/example-preview.jpg'}
+function projectOrigin(p){return p?.source==='example'?'示例模型':p?.draft?'我的修改稿':'我的作品'}
+function selectedPiece(){return state.project?.pieces.find(p=>String(p.id)===String(state.selectedId)) || null}
+function activePiece(){return state.project?.pieces[Math.max(0,state.progress-1)] || null}
+function inventoryName(item){if(item.sampleHeight&&item.partId==='brick-1x1'&&item.color==='#76502f')return `枝干示例 · ${item.h<.4?'短':item.h<.45?'中':'长'}`;return item.name}
+function rememberActive(){try{if(state.project)localStorage.setItem('brickit-active-id',state.project.id);localStorage.setItem('brickit-current-page',state.page)}catch{}}
+async function refreshProjects(){try{state.projects=await library.list();state.projects.sort((a,b)=>String(b.updatedAt).localeCompare(String(a.updatedAt)));renderWorks();renderRecent()}catch(e){toast(e.message||'暂时无法读取本地作品。','error')}}
+function queueStore(project){const copy=cloneProject(project);writeQueue=writeQueue.catch(()=>{}).then(()=>library.put(copy));return writeQueue}
+function ensureWritable(){if(!state.project)return;if(!state.project.draft){const base=state.project;state.project={...cloneProject(base),id:uid(),parentId:base.id,rootId:base.rootId||base.id,source:'user',draft:true,version:(base.version||1)+1,favorite:false,createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};state.undo=[];state.redo=[]}}
+function recordUndo(){state.undo.push(cloneProject(state.project));if(state.undo.length>60)state.undo.shift();state.redo=[]}
+function markChanged(){
+  state.project.updatedAt=new Date().toISOString();state.project.draft=true;
+  const snapshot=cloneProject(state.project),id=snapshot.id,stamp=snapshot.updatedAt;
+  renderProjectHeader();rememberActive();
+  queueStore(snapshot).then(()=>{if(state.project?.id===id&&state.project.updatedAt===stamp)$('#project-version').textContent=`版本 ${state.project.version} · 草稿已自动保存`;return refreshProjects()}).catch(e=>toast(e.message||'草稿暂时无法保存。','error'));
+  clearTimeout(draftTimer);draftTimer=setTimeout(async()=>{if(state.project?.id!==id||state.project.updatedAt!==stamp||!engine||state.busy)return;try{const thumb=await engine.thumbnail();if(state.project?.id===id&&state.project.updatedAt===stamp){state.project.thumbnail=thumb;await queueStore(state.project);await refreshProjects()}}catch{}},650);
 }
-function renderGuide() {
-  $('#guide-list').innerHTML=steps.map((s,i)=>`<button class="guide-step" data-guide-step="${i+1}">${brickSVG(i===9?'leaf':'body',2,2,i+1,true)}<div><strong>${String(i+1).padStart(2,'0')} / ${s.name}</strong><span>${s.detail}</span></div></button>`).join('');
-  $$('#guide-list [data-guide-step]').forEach(button=>button.addEventListener('click',()=>{
-    $('#guide-dialog').close();stopAuto();setStep(Number(button.dataset.guideStep));
-    if(innerWidth<641)$('#stage').scrollIntoView({behavior:motionBehavior(),block:'center'});
-  }));
-}
-function renderInventory() {
-  $('#parts-total').textContent=blueprint.length;
-  $('#parts-list').innerHTML=inventory.map(item=>{
-    const name=item.type==='body'?`${colors[state.color].name}标准积木`:item.type==='stem'?'棕色枝干积木':'绿色叶片薄板';
-    return `<div class="parts-row">${brickSVG(item.type,item.w,item.d)}<div class="parts-row-name"><strong>${name}</strong><span>${item.dims} 凸点${item.type==='leaf'?' · 薄板':''}</span></div><span class="parts-row-count">× <b>${item.count}</b></span></div>`;
-  }).join('');
-}
-function syncUI() {
-  const step=state.step;
-  $('#step-count').textContent=step===null?'准备就绪':`${String(step).padStart(2,'0')} / 10${step===10?' · 已完成':''}`;
-  $('#step-count').classList.toggle('in-progress',step!==null);
-  $('#preview-label').textContent=step===null?'3D 实时预览':step===10?'我的苹果 · 已完成':`正在搭建 · 第 ${step} 步`;
-  $('#build-status').textContent=step===null?'从稳固的基座，到最后一片绿叶。':step===0?'准备好了，让第一块积木落下。':step===10?'完成了！每一块积木，都有你的创意。':steps[step-1].detail;
-  $('#build-button span').textContent=step===null||step===0?'开始搭建':step===10?'再搭一次':step===9?'加上枝叶':'搭建下一层';
-  $('#build-button .arrow use').setAttribute('href',step===10?'#i-arrow-counter-clockwise':'#i-arrow-up-right');
-  $('#auto-button span').textContent=state.playing?'暂停演示':step>0&&step<10?'继续演示':'自动演示';
-  $('#auto-button .icon use').setAttribute('href',state.playing?'#i-pause':'#i-play');
-  $('#auto-button').classList.toggle('playing',state.playing);
-  $('#reset-build').hidden=step===null;
-  $('#stage').dataset.step=step===null?'preview':step;
-  $('#stage').dataset.color=state.color;
-  $('#stage').dataset.exploded=state.exploded;
-  $('#color-name').textContent=colors[state.color].name;
-  $$('.color-swatch').forEach(button=>{const yes=button.dataset.color===state.color;button.classList.toggle('selected',yes);button.setAttribute('aria-pressed',yes)});
-  $('#explode-button').setAttribute('aria-pressed',state.exploded);
-  $('#explode-button').setAttribute('aria-label',state.exploded?'合拢模型':'拆分模型');
-  $('#explode-button').dataset.tooltip=state.exploded?'合拢模型':'拆分模型';
-  $('#view-toggle span').textContent=state.exploded?'分层视图':'完整模型';
-  $('#view-toggle').setAttribute('aria-label',state.exploded?'切换为完整模型':'切换为分层视图');
-  $('#rotate-button').setAttribute('aria-pressed',state.rotating);
-  $('#rotate-button').setAttribute('aria-label',state.rotating?'停止旋转':'自动旋转');
-  $('#rotate-button').dataset.tooltip=state.rotating?'停止旋转':'自动旋转';
-  renderSteps();
-}
-function setStep(step,complete=true) {
-  if(!state.ready)return;
-  clearTimeout(completionTimer);
-  state.step=Math.max(0,Math.min(10,step));
-  model.setStep(state.step);syncUI();
-  if(innerWidth<901){const active=$(`#steps [data-step="${state.step}"]`);if(active){const holder=$('#steps');holder.scrollTo({left:active.offsetLeft-holder.offsetLeft-20,behavior:motionBehavior()})}}
-  if(state.step===10&&complete) {
-    stopAuto();
-    completionTimer=setTimeout(()=>{$('#complete-dialog').showModal()},900);
-  }
-}
-function stopAuto(){clearTimeout(autoTimer);state.playing=false;syncUI()}
-function autoTick() {
-  if(!state.playing)return;
-  const next=(state.step??0)+1;
-  setStep(next);
-  if(next<10)autoTimer=setTimeout(autoTick,1250);
-}
-function toggleAuto() {
-  if(!state.ready)return;
-  if(state.playing){stopAuto();return}
-  clearTimeout(completionTimer);
-  if(state.step===null||state.step===10)setStep(0,false);
-  state.playing=true;syncUI();
-  autoTimer=setTimeout(autoTick,state.step===0?280:500);
-}
-function toggleExploded(){if(!state.ready)return;state.exploded=!state.exploded;model.setExploded(state.exploded);syncUI()}
-function toast(message) {
-  clearTimeout(toastTimer);$('#toast span').textContent=message;$('#toast').classList.add('show');
-  toastTimer=setTimeout(()=>$('#toast').classList.remove('show'),3100);
-}
-function motionBehavior(){return matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'}
-function download(blob,name){const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=name;document.body.appendChild(anchor);anchor.click();anchor.remove();setTimeout(()=>URL.revokeObjectURL(url),5000)}
-async function saveArtwork() {
-  if(!state.ready||saveInFlight)return;
-  saveInFlight=true;const saveButton=$('#save-button');saveButton.disabled=true;
-  try {
-    try{localStorage.setItem('brick-apple-save',JSON.stringify({color:state.color,step:state.step,savedAt:Date.now()}))}catch{}
-    const blob=await model.snapshot();
-    if(!blob)throw new Error('Empty export');
-    download(blob,`brick-apple-${state.color}.png`);
-    toast('作品已保存为图片，留住这一点小美好。');
-  }catch{toast('图片暂时无法导出，请稍后再试。')}
-  finally{saveInFlight=false;saveButton.disabled=false}
-}
+function applyPieces(pieces,selectedId=state.selectedId){state.project.pieces=orderPieces(pieces);state.progress=state.project.pieces.length;state.selectedId=selectedId;engine?.loadPieces(state.project.pieces);engine?.setProgress(state.progress,{animate:false});engine?.setMode(state.mode);engine?.selectPiece(state.selectedId);renderPanels();renderPlayer();markChanged()}
 
-$$('[data-action]').forEach(button=>button.addEventListener('click',()=>{
-  const action=button.dataset.action;
-  if(action==='parts'){stopAuto();clearTimeout(completionTimer);$('#parts-dialog').showModal();return}
-  if(action==='guide'){stopAuto();clearTimeout(completionTimer);$('#guide-dialog').showModal();return}
-  document.querySelector('main').scrollIntoView({behavior:motionBehavior()});
-}));
-$$('[data-close]').forEach(button=>button.addEventListener('click',()=>button.closest('dialog').close()));
-$$('dialog').forEach(dialog=>dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)dialog.close()}}));
-$$('.color-swatch').forEach(button=>button.addEventListener('click',()=>{
-  state.color=button.dataset.color;model?.setColor(state.color);syncUI();renderInventory();renderGuide();
-}));
-$('#build-button').addEventListener('click',()=>{if(!state.ready)return;stopAuto();setStep(state.step===null||state.step===10?1:state.step+1)});
-$('#auto-button').addEventListener('click',toggleAuto);
-$('#explode-button').addEventListener('click',toggleExploded);
-$('#view-toggle').addEventListener('click',toggleExploded);
-$('#rotate-button').addEventListener('click',()=>{if(!state.ready)return;state.rotating=!state.rotating;model.setAutoRotate(state.rotating);syncUI()});
-$('#zoom-in').addEventListener('click',()=>model?.zoomBy(1.13));
-$('#zoom-out').addEventListener('click',()=>model?.zoomBy(1/1.13));
-$('#reset-view').addEventListener('click',()=>{model?.resetView();toast('视角已复位，重新看看你的苹果。')});
-$('#reset-build').addEventListener('click',()=>{
-  stopAuto();clearTimeout(completionTimer);state.step=null;state.exploded=false;model.setStep(null);model.setExploded(false);syncUI();
-});
-$('#save-button').addEventListener('click',saveArtwork);
-$('#complete-save').addEventListener('click',()=>{$('#complete-dialog').close();saveArtwork()});
-$('#download-parts').addEventListener('click',()=>{
-  const rows=[['brick. 一颗苹果 · 零件清单'],['配色',colors[state.color].name],['零件类型','尺寸（凸点）','数量'],...inventory.map(i=>[i.type==='body'?`${colors[state.color].name}标准积木`:i.type==='stem'?'棕色枝干积木':'绿色叶片薄板',i.dims,i.count]),['总计','',blueprint.length]];
-  const csv='\uFEFF'+rows.map(row=>row.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\r\n');
-  download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'brick-apple-parts.csv');toast('零件清单已下载。准备好，就开搭吧。');
-});
-window.addEventListener('keydown',e=>{
-  if(!state.ready||document.querySelector('dialog[open]')||e.metaKey||e.ctrlKey||e.altKey)return;
-  if(e.key==='ArrowRight'){e.preventDefault();stopAuto();setStep(state.step===null?1:Math.min(10,state.step+1))}
-  if(e.key==='ArrowLeft'){e.preventDefault();stopAuto();setStep(state.step===null?9:Math.max(1,state.step-1),false)}
-});
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&state.playing)stopAuto()});
-renderSteps();renderGuide();syncUI();
-$('#build-button').disabled=true;$('#auto-button').disabled=true;$('#save-button').disabled=true;
+function setPage(page){if(!['create','studio','catalog','works'].includes(page))return;pause();closeMobilePanel();if(page==='studio'&&!state.project){setPage('create');return}state.page=page;$$('[id^="page-"]').forEach(s=>s.hidden=s.id!==`page-${page}`);$$('button[data-page]').forEach(b=>{const active=b.dataset.page===page||(page==='create'&&b.dataset.page==='studio');b.classList.toggle('active',active);active?b.setAttribute('aria-current','page'):b.removeAttribute('aria-current')});document.body.dataset.page=page;if(page==='catalog')renderCatalog();if(page==='works')renderWorks();if(page==='create'){renderRecent();stopCamera()}if(page==='studio'){requestAnimationFrame(()=>window.dispatchEvent(new Event('resize')));updateSceneLabels()}if(state.project)renderProjectHeader();rememberActive()}
+let drawerFocus=null;
+function closeMobilePanel(){const section=$('#page-studio');if(section)section.dataset.panel='canvas';$$('button[data-panel]').forEach(b=>{const yes=b.dataset.panel==='canvas';b.setAttribute('aria-pressed',yes);b.classList.toggle('active',yes)});for(const id of ['app-header','stage','build-controls','edit-controls','mobile-panel-tabs','left-drawer','right-drawer']){const el=$('#'+id);if(el)el.inert=false}$$('.app-footer,.project-bar').forEach(el=>el.inert=false);for(const id of ['left-drawer','right-drawer']){const el=$('#'+id);el?.removeAttribute('aria-modal');el?.removeAttribute('role')}if(drawerFocus?.isConnected)drawerFocus.focus({preventScroll:true});drawerFocus=null}
+function openMobilePanel(panel){if(panel==='canvas'){closeMobilePanel();return}const section=$('#page-studio');section.dataset.panel=panel;$$('button[data-panel]').forEach(b=>{const yes=b.dataset.panel===panel;b.setAttribute('aria-pressed',yes);b.classList.toggle('active',yes)});if(innerWidth<=760){drawerFocus=document.activeElement;for(const id of ['app-header','stage','build-controls','edit-controls','mobile-panel-tabs',panel==='left'?'right-drawer':'left-drawer']){const el=$('#'+id);if(el)el.inert=true}$$('.app-footer,.project-bar').forEach(el=>el.inert=true);const drawer=$('#'+panel+'-drawer');drawer.inert=false;drawer.setAttribute('role','dialog');drawer.setAttribute('aria-modal','true');drawer.querySelector('button')?.focus({preventScroll:true})}}
+function renderProjectHeader(){if(!state.project)return;$('#project-title').value=state.project.title;$('#project-origin').textContent=projectOrigin(state.project);$('#project-version').textContent=`版本 ${state.project.version||1}${state.project.draft?' · 本地草稿':''}`;const f=$('#favorite-button');f?.setAttribute('aria-pressed',!!state.project.favorite);if(f)f.innerHTML=icon('heart')+`<span>${state.project.favorite?'已收藏':'收藏模型'}</span>`;$$('[data-action="save"],[data-action="export-image"]').forEach(b=>b.disabled=!state.project||state.busy||(b.dataset.action==='save'&&state.page!=='studio'))}
+async function ensureEngine(){if(engine)return engine;if(enginePromise)return enginePromise;const loading=$('#scene-loading');loading.hidden=false;loading.setAttribute('aria-hidden','false');loading.innerHTML=`<span class="loading-mark">${icon('cube')}</span><span>正在准备积木工作台…</span>`;enginePromise=(async()=>{try{const mod=await import('./model.js');engine=await mod.createModel($('#scene'),{onSelect:id=>{if(state.mode!=='edit')return;state.selectedId=id;engine.selectPiece(id);renderRight();renderPlayer()},onPlace:position=>placePart(position),validatePlacement:candidate=>state.project?canPlace(state.project.pieces,candidate).ok:true,onReady:()=>{loading.hidden=true;loading.setAttribute('aria-hidden','true');$('#scene').setAttribute('aria-busy','false')},onError:error=>toast(error?.message||'3D 工作台暂时不可用。','error')});loading.hidden=true;loading.setAttribute('aria-hidden','true');$('#scene').setAttribute('aria-busy','false');$('#stage').dataset.ready='true';return engine}catch(e){enginePromise=null;$('#stage').dataset.ready='error';loading.hidden=false;loading.innerHTML=icon('warning-circle')+`<span>3D 工作台暂时无法加载</span><span class="panel-note">请使用支持 WebGL 的浏览器。</span><button class="button button-secondary" data-action="retry-model">重新加载</button>`;throw e}})();return enginePromise}
+async function openProject(project){try{pause();cancelPlacement();state.project=cloneProject(project);state.project.pieces=orderPieces(state.project.pieces);state.progress=state.project.pieces.length;state.mode='build';state.selectedId=null;state.undo=[];state.redo=[];state.exploded=false;state.rotating=false;renderProjectHeader();state.page='studio';setPage('studio');renderPanels();renderPlayer();renderMode();const model=await ensureEngine();model.loadPieces(state.project.pieces);model.setProgress(state.progress,{animate:false});model.setMode('build');model.setExploded(false);model.setAutoRotate(false);model.resetView();model.selectPiece(null);rememberActive();updateSceneLabels();const version=++previewVersion;requestAnimationFrame(async()=>{try{const image=await model.thumbnail();if(version===previewVersion&&state.project&&!state.project.thumbnail){state.project.thumbnail=image;const el=$('#create-example-image');if(el&&state.project.source==='example')el.src=image}}catch{}})}catch(e){toast(e.message||'暂时无法打开模型。','error')}}
+function openExample(){return openProject(createExampleProject())}
+function renderMode(){$$('button[data-mode]').forEach(b=>{const active=b.dataset.mode===state.mode;b.setAttribute('aria-pressed',active);b.classList.toggle('active',active)});$('#build-controls').hidden=state.mode!=='build';$('#edit-controls').hidden=state.mode!=='edit';$('#page-studio').dataset.mode=state.mode;updateSceneLabels()}
+function changeMode(mode){if(!state.project)return;pause();cancelPlacement();state.mode=mode==='edit'?'edit':'build';state.selectedId=null;if(state.mode==='edit'){state.exploded=false;state.rotating=false;engine?.setExploded(false);engine?.setAutoRotate(false)}state.project.pieces=orderPieces(state.project.pieces);state.progress=state.project.pieces.length;engine?.loadPieces(state.project.pieces);engine?.setProgress(state.progress,{animate:false});engine?.setMode(state.mode);engine?.selectPiece(null);renderMode();renderPanels();renderPlayer();closeMobilePanel()}
+function updateSceneLabels(){if(!state.project)return;$('#scene-top-label').textContent=state.placementPart?'点击积木顶面或底板放置':state.mode==='edit'?'自由编辑 · 点击模型选择积木':'逐块搭建 · 拖动旋转';$('#scene-count').textContent=state.mode==='edit'?`${state.project.pieces.length} 颗积木`:`${state.progress} / ${state.project.pieces.length} 颗`;$('#stage').dataset.mode=state.mode;$('#stage').dataset.progress=state.progress;$('#stage').dataset.pieces=state.project.pieces.length;$('#stage').dataset.selected=state.selectedId??'';$('#stage').dataset.placement=state.placementPart?.id||'';$$('[data-action="rotate"]').forEach(b=>b.setAttribute('aria-pressed',state.rotating));$$('[data-action="explode"]').forEach(b=>b.setAttribute('aria-pressed',state.exploded))}
 
-try {
-  const module=await import('./model.js');
-  blueprint=module.BLUEPRINT;inventory=module.getInventory();
-  $('#total-pieces').textContent=blueprint.length;$('#complete-total').textContent=blueprint.length;
-  renderInventory();
-  model=await module.createModel($('#scene'),{
-    onPieceClick:piece=>{
-      const type=piece.type==='body'?`${colors[state.color].name}积木`:piece.type==='leaf'?'绿色叶片':'棕色枝干';
-      toast(`${type} ${piece.w} × ${piece.d} · 第 ${piece.layer} 步`);
-    },
-    onReady:()=>{$('#loading-state').classList.add('loaded');$('#loading-state').setAttribute('aria-hidden','true');$('#scene').setAttribute('aria-busy','false')}
-  });
-  model.setColor(state.color);state.ready=true;
-  $('#build-button').disabled=false;$('#auto-button').disabled=false;$('#save-button').disabled=false;
-  $('#stage').dataset.ready='true';
-  // A stable read-only view is useful for lightweight interface verification.
-  window.brickStudio={get state(){return {...state,model:model.state}},get inventory(){return inventory.map(p=>({...p}))}};
-}catch(error) {
-  console.error('The model could not start:',error);
-  $('#loading-state').classList.add('error');
-  $('#loading-state').innerHTML=`${icon('cube')}<span>3D 工作台暂时未能加载</span><button id="retry-scene">点击重新加载</button><span style="font-size:10px">请使用支持 WebGL 的浏览器</span>`;
-  $('#retry-scene').addEventListener('click',()=>location.reload());
-  $('#stage').dataset.ready='error';
+function renderPanels(){renderLeft();renderRight()}
+function renderLeft(){const panel=$('#left-panel');if(!state.project)return;if(state.mode==='build'){const p=activePiece(),part=findPart(p?.partId)||p;panel.innerHTML=`<div class="panel-heading"><h2>当前积木</h2><span class="panel-kicker">BUILDING GUIDE</span></div><div class="current-piece-preview">${part?partSvg(part,p.color):icon('cube')}</div><div class="selection-info"><strong>${esc(part?.name||'准备开始')}</strong><span>${esc(colorName(p?.color||'#b91620'))}${p?` · ${p.w} × ${p.d} 凸点`:''}</span></div><p class="panel-note">${state.progress===0?'点击播放，让第一块积木落下。':state.progress===state.project.pieces.length?'全部积木已就位。可以再次播放，或进入自由编辑。':`第 ${state.progress} 颗积木已就位，继续拼接下一块。`}</p><div class="panel-section"><div class="panel-kicker">模型信息</div><div class="inventory-row"><span>总零件</span><strong class="inventory-count">${state.project.pieces.length} 颗</strong></div><div class="inventory-row"><span>零件种类</span><strong class="inventory-count">${inventoryFor(state.project.pieces).length} 类</strong></div><div class="inventory-row"><span>保存位置</span><span>此浏览器</span></div></div><button class="button button-secondary" data-mode="edit">${icon('cursor-click')}自己改一改</button>`;return}
+ panel.innerHTML=`<div class="panel-heading"><h2>挑选零件</h2><span class="badge-subtle">示例库</span></div><label class="field-label" for="mini-search">名称或尺寸</label><input class="field-input" id="mini-search" value="${esc(state.miniSearch)}" placeholder="例如 2 × 4"><div class="swatch-row">${COLOR_OPTIONS.slice(0,8).map(c=>`<button class="swatch" data-action="placement-color" data-color="${c.hex}" style="--swatch:${c.hex};background:${c.hex}" aria-label="${esc(c.name)}" aria-pressed="${state.placementColor===c.hex}"></button>`).join('')}</div><div class="part-grid" id="mini-parts"></div><button class="button button-ghost" data-page="catalog">浏览完整零件仓库 ${icon('arrow-right')}</button><p class="panel-note">选择零件，再点击模型顶面或底板放置。</p>`;renderMiniParts()}
+function normalized(str){return String(str).toLowerCase().replace(/[\s×x*]/g,'')}
+function renderMiniParts(){if(!$('#mini-parts'))return;const q=normalized(state.miniSearch);const parts=CATALOG.filter(p=>!q||normalized(p.name+' '+p.id+' '+p.w+'x'+p.d).includes(q)).slice(0,12);$('#mini-parts').innerHTML=parts.length?parts.map(p=>`<button class="part-card ${state.placementPart?.id===p.id?'selected':''}" data-action="use-part" data-part-id="${esc(p.id)}" aria-label="选择 ${esc(p.name)}" aria-pressed="${state.placementPart?.id===p.id}"><span class="part-thumb">${partSvg(p,state.placementColor)}</span><span class="part-name">${esc(p.name)}</span><span class="part-meta">${p.w} × ${p.d}</span></button>`).join(''):'<div class="empty-state">没有匹配的示例零件。</div>'}
+function renderRight(){if(!state.project)return;const panel=$('#right-panel');if(state.mode==='build'){const items=inventoryFor(state.project.pieces);panel.innerHTML=`<div class="panel-heading"><h2>零件清单</h2><span class="badge-subtle">${items.length} 类</span></div><p class="panel-note">按零件和颜色统计，随模型修改同步更新。</p><div class="inventory-list">${items.map(item=>`<div class="inventory-row"><span class="inventory-thumb">${partSvg(item,item.color)}</span><span class="inventory-info"><strong>${esc(inventoryName(item))}</strong><span><i class="color-dot" style="background:${item.color}"></i>${esc(colorName(item.color))} · ${item.w} × ${item.d}</span></span><strong class="inventory-count">${item.count}</strong></div>`).join('')}</div><div class="panel-section inline-actions"><button class="button button-secondary" data-action="export-parts">${icon('download-simple')}下载清单</button></div>`;return}
+ const p=selectedPiece();if(!p){panel.innerHTML=`<div class="panel-heading"><h2>积木属性</h2><span class="badge-subtle">自由编辑</span></div><div class="empty-state">${icon('cursor-click')}<strong>${state.placementPart?'准备放置零件':'选择一颗积木'}</strong><p>${state.placementPart?esc(state.placementPart.name)+'已选中。在模型顶面或底板点击放置。':'点击模型中的积木，可以换色、调整位置、旋转或替换。'}</p></div><div class="notice">提供网格吸附与基本重叠检查。完整连接规则将随零件数据库接入。</div><div class="history-state">${state.project.pieces.length} 颗积木 · ${state.undo.length} 次可撤销</div>`;return}
+ const part=findPart(p.partId)||p;panel.innerHTML=`<div class="panel-heading"><h2>积木属性</h2><button class="button button-icon button-ghost" data-action="deselect" aria-label="取消选择">${icon('x')}</button></div><div class="current-piece-preview">${partSvg(part,p.color)}</div><div class="selection-info"><strong>${esc(part.name||`${p.w} × ${p.d} 积木`)}</strong><span>${esc(p.partId)}</span></div><div class="panel-section"><label class="field-label">颜色</label><div class="swatch-row">${COLOR_OPTIONS.map(c=>`<button class="swatch" data-action="piece-color" data-color="${c.hex}" style="--swatch:${c.hex};background:${c.hex}" aria-label="${esc(c.name)}" aria-pressed="${String(p.color).toLowerCase()===c.hex.toLowerCase()}"></button>`).join('')}</div></div><div class="panel-section"><label class="field-label">位置（凸点单位）</label><div class="field-grid">${['x','y','z'].map(axis=>`<label class="field-label">${axis.toUpperCase()}<input class="field-input" type="number" step="0.5" data-coordinate="${axis}" value="${Number((p[axis]/UNIT).toFixed(3))}" aria-label="${axis.toUpperCase()} 位置"></label>`).join('')}</div><button class="button button-secondary" data-action="rotate-piece">${icon('arrow-clockwise')}旋转 90°</button></div><div class="panel-section"><label class="field-label" for="replacement-part">替换为</label><select class="field-select" id="replacement-part">${CATALOG.map(a=>`<option value="${esc(a.id)}" ${p.partId===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}</select><button class="button button-secondary" data-action="replace-piece">替换选中积木</button></div><button class="button button-danger" data-action="delete">${icon('trash')}删除积木</button><p class="panel-note">修改会自动保存为本地草稿，原始模型会保留。</p>`;
+ updateSceneLabels()}
+function renderPlayer(){if(!state.project)return;const total=state.project.pieces.length;$('#progress-range').max=total;$('#progress-range').value=state.progress;$('#built-count').textContent=`第 ${state.progress} / ${total} 块`;$('#play-label').textContent=state.playing?'暂停':state.progress>=total?'重新播放':'播放搭建';$('#build-controls [data-action="play"] use')?.setAttribute('href',state.playing?'#i-pause':'#i-play');$$('[data-action="previous"]').forEach(b=>b.disabled=state.progress===0);$$('[data-action="next"]').forEach(b=>b.disabled=state.progress>=total);$$('[data-action="undo"]').forEach(b=>b.disabled=state.undo.length===0);$$('[data-action="redo"]').forEach(b=>b.disabled=state.redo.length===0);$$('[data-action="delete"]').forEach(b=>b.disabled=!selectedPiece());$('#placement-label').textContent=state.placementPart?`待放置：${state.placementPart.name}`:'先从左侧选择零件';const stage=state.progress===0?'准备开始':state.progress===total?'完整模型已拼装完成':`当前：${findPart(activePiece()?.partId)?.name || '积木'} · 一块一块，慢慢成形`;$('#build-description').textContent=stage;const n=Math.max(total,1);$('#stage-jumps').innerHTML=[['基座',Math.max(1,Math.round(n*.1))],['主体',Math.round(n*.5)],['顶部',Math.round(n*.85)],['完成',n]].map(([name,count])=>`<button class="stage-jump" data-action="jump" data-count="${count}">${name}</button>`).join('');$('#edit-controls').classList.toggle('is-placing',!!state.placementPart);$$('[data-action="cancel-placement"]').forEach(b=>b.hidden=!state.placementPart);updateSceneLabels()}
+function pause(){clearTimeout(playTimer);state.playing=false;$('#build-controls [data-action="play"] use')?.setAttribute('href','#i-play');if(state.project&&$('#play-label'))$('#play-label').textContent=state.progress>=state.project.pieces.length?'重新播放':'播放搭建'}
+function progressTo(value,animate=true){if(!state.project||state.mode!=='build')return;state.progress=Math.max(0,Math.min(state.project.pieces.length,value));engine?.setProgress(state.progress,{animate});renderLeft();renderPlayer();if(state.progress===state.project.pieces.length&&state.playing){pause();toast('每一块都已就位。你的模型完成了！')}}
+function tick(){if(!state.playing)return;progressTo(state.progress+1,true);if(state.playing)playTimer=setTimeout(tick,state.speed)}
+function togglePlay(){if(!state.project)return;if(state.playing){pause();renderPlayer();return}if(!state.project.pieces.length){toast('模型为空，先添加一些积木吧。');return}if(state.progress>=state.project.pieces.length)progressTo(0,false);state.playing=true;renderPlayer();playTimer=setTimeout(tick,150)}
+
+async function usePart(id){const part=findPart(id);if(!part)return;if(!state.project)await openExample();if(!engine)return;setPage('studio');if(state.mode!=='edit')changeMode('edit');state.selectedId=null;engine.selectPiece(null);state.exploded=false;state.rotating=false;engine.setExploded(false);engine.setAutoRotate(false);state.placementPart=part;state.placementRotation=0;engine.setPlacement(part,state.placementColor,0);renderLeft();renderRight();renderPlayer();closeMobilePanel();toast(`已选择${part.name}，点击模型顶面或底板放置。`)}
+function cancelPlacement(){state.placementPart=null;engine?.setPlacement(null,state.placementColor);if(state.project){renderPlayer();updateSceneLabels()}}
+function placePart(position){if(state.busy)return;if(!state.project||!state.placementPart||state.mode!=='edit')return;const candidate=createPiece(state.placementPart,state.placementColor,position);const check=canPlace(state.project.pieces,candidate);if(!check.ok){toast(check.reason||'这个位置与已有积木重叠，请换一个位置。','error');return}ensureWritable();recordUndo();applyPieces([...state.project.pieces,candidate],candidate.id);engine?.setPlacement(state.placementPart,state.placementColor,state.placementRotation);toast('积木已放置，可继续添加，或按 Esc 退出。')}
+function editSelected(patch){if(state.busy)return;const old=selectedPiece();if(!old)return;const candidate={...old,...patch};const check=canPlace(state.project.pieces,candidate,old.id);if(!check.ok){toast(check.reason||'该位置与其他积木重叠。','error');renderRight();return}ensureWritable();recordUndo();applyPieces(state.project.pieces.map(p=>String(p.id)===String(old.id)?candidate:p),old.id)}
+function removeSelected(){if(state.busy)return;const selected=selectedPiece();if(!selected){toast('先点击模型中的一颗积木。');return}ensureWritable();recordUndo();applyPieces(state.project.pieces.filter(p=>String(p.id)!==String(selected.id)),null);toast('已删除积木，可使用撤销恢复。')}
+function undo(){if(state.busy)return;if(!state.undo.length)return;state.redo.push(cloneProject(state.project));state.project=state.undo.pop();state.project.draft=true;state.selectedId=null;engine?.loadPieces(state.project.pieces);engine?.selectPiece(null);state.progress=state.project.pieces.length;engine?.setProgress(state.progress,{animate:false});renderProjectHeader();renderPanels();renderPlayer();markChanged()}
+function redo(){if(state.busy)return;if(!state.redo.length)return;state.undo.push(cloneProject(state.project));state.project=state.redo.pop();state.project.draft=true;state.selectedId=null;engine?.loadPieces(state.project.pieces);engine?.selectPiece(null);state.progress=state.project.pieces.length;engine?.setProgress(state.progress,{animate:false});renderProjectHeader();renderPanels();renderPlayer();markChanged()}
+async function saveVersion(){
+  if(!state.project||state.busy)return;pause();clearTimeout(draftTimer);setBusy(true);
+  const id=state.project.id,snapshot=cloneProject(state.project);
+  try{if(engine)snapshot.thumbnail=await engine.thumbnail();snapshot.draft=false;snapshot.updatedAt=new Date().toISOString();await queueStore(snapshot);if(state.project?.id===id){state.project=snapshot;state.undo=[];state.redo=[];renderProjectHeader();renderPanels();renderPlayer();rememberActive()}await refreshProjects();toast('版本已保存到“我的作品”，可在此浏览器继续编辑。')}
+  catch(e){toast(e.message||'保存失败，请稍后再试。','error')}finally{setBusy(false)}
 }
-window.addEventListener('pagehide',event=>{clearTimeout(autoTimer);clearTimeout(completionTimer);if(!event.persisted)model?.dispose()});
+async function toggleFavorite(){
+  if(!state.project||state.busy)return;clearTimeout(draftTimer);setBusy(true);const id=state.project.id,before=state.project.favorite;state.project.favorite=!before;const snapshot=cloneProject(state.project);renderProjectHeader();
+  try{if(!snapshot.thumbnail&&engine)snapshot.thumbnail=await engine.thumbnail();snapshot.updatedAt=new Date().toISOString();await queueStore(snapshot);if(state.project?.id===id){state.project.favorite=snapshot.favorite;state.project.thumbnail=snapshot.thumbnail;renderProjectHeader()}await refreshProjects();toast(snapshot.favorite?'已收藏模型，可在“我的作品”中打开。':'已取消收藏。')}
+  catch(e){if(state.project?.id===id){state.project.favorite=before;renderProjectHeader()}toast(e.message||'暂时无法保存收藏。','error')}finally{setBusy(false)}
+}
+function requestDelete(id){const project=state.projects.find(p=>p.id===id);if(!project)return;let dialog=$('#delete-dialog');if(!dialog){dialog=document.createElement('dialog');dialog.id='delete-dialog';dialog.className='studio-dialog';document.body.appendChild(dialog)}dialog.innerHTML=`<div class="dialog-heading"><h2>删除本地作品？</h2><button class="button button-icon button-ghost" data-action="close-dialog" aria-label="取消删除">${icon('x')}</button></div><p class="dialog-description">“${esc(project.title)}”将从此浏览器移除，已保存的其他版本会保留。</p><div class="dialog-actions"><button class="button button-secondary" data-action="close-dialog">保留作品</button><button class="button button-danger" data-action="confirm-delete-work" data-project-id="${esc(id)}">删除作品</button></div>`;dialog.showModal()}
+async function deleteWork(id){clearTimeout(draftTimer);await writeQueue.catch(()=>{});await library.remove(id);if(state.project?.id===id){cancelPlacement();state.project=null;state.selectedId=null;engine?.loadPieces([]);state.undo=[];state.redo=[];try{localStorage.removeItem('brickit-active-id')}catch{}setPage('works');$$('[data-action="save"],[data-action="export-image"]').forEach(b=>b.disabled=true)}await refreshProjects();toast('已移除本地作品。')}
+function download(blob,name){const url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download=name;document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000)}
+async function exportImage(){if(!engine||!state.project)return;pause();setBusy(true);try{await document.fonts.ready;const blob=await engine.snapshot({title:state.project.title,colorName:'brick.it 创作'});if(!blob)throw new Error('图片暂时无法导出。');download(blob,`brick.it-${state.project.title.replace(/[^\p{L}\p{N}_-]/gu,'-')}.png`);toast('模型图片已导出。')}catch(e){toast(e.message||'图片暂时无法导出。','error')}finally{setBusy(false)}}
+function exportParts(){if(!state.project)return;const inv=inventoryFor(state.project.pieces);const rows=[['brick.it 零件清单'],['模型名称',state.project.title],['零件编号（示例）','名称','颜色','尺寸（凸点）','数量'],...inv.map(p=>[p.partId,inventoryName(p),colorName(p.color),`${p.w} × ${p.d}`,p.count]),['总计','','','',state.project.pieces.length]];const csv='\uFEFF'+rows.map(row=>row.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\r\n');download(new Blob([csv],{type:'text/csv;charset=utf-8'}),'brick.it-parts.csv');toast('零件清单已下载。')}
+
+function renderCatalog(){if(!$('#catalog-grid'))return;const q=normalized(state.catalogSearch);const parts=CATALOG.filter(p=>(state.catalogCategory==='all'||p.category===state.catalogCategory)&&(state.catalogColor==='all'||!p.colors?.length||p.colors.some(c=>String(c).toLowerCase()===state.catalogColor.toLowerCase()))&&(!q||normalized(p.name+' '+p.id+' '+categoryName(p.category)+' '+p.w+'x'+p.d).includes(q)));$('#catalog-count').textContent=`${parts.length} / ${CATALOG.length} 种示例零件`;$('#catalog-grid').innerHTML=parts.length?parts.map(p=>{const color=state.catalogColor==='all'?state.placementColor:state.catalogColor;return `<article class="part-card"><div class="part-thumb">${partSvg(p,color)}</div><div class="part-meta">${esc(categoryName(p.category))}</div><h3 class="part-name">${esc(p.name)}</h3><div class="part-meta">${esc(p.id)} · ${p.w} × ${p.d} 凸点</div><p class="panel-note">${esc(p.description||'常见零件，支持在工作台放置和编辑。')}</p><button class="button button-secondary" data-action="use-part" data-part-id="${esc(p.id)}">${icon('plus')}在工作台使用</button></article>`}).join(''):`<div class="empty-state">${icon('magnifying-glass')}<strong>没有找到匹配的零件</strong><p>试试其他名称、尺寸或分类。</p><button class="button button-secondary" data-action="clear-catalog">清除筛选</button></div>`}
+function configureCatalog(){const categories=[...new Set(CATALOG.map(p=>p.category))];$('#catalog-category').innerHTML='<option value="all">全部分类</option>'+categories.map(c=>`<option value="${esc(c)}">${esc(categoryName(c))}</option>`).join('');$('#catalog-color').innerHTML='<option value="all">全部颜色</option>'+COLOR_OPTIONS.map(c=>`<option value="${c.hex}">${esc(c.name)}</option>`).join('')}
+function workCard(p,compact=false){return `<article class="work-card"><button class="work-thumb" data-action="open-work" data-project-id="${esc(p.id)}" aria-label="打开 ${esc(p.title)}"><img src="${thumbSrc(p)}" alt="${esc(p.title)}积木模型" loading="lazy"></button><div class="work-card-body"><div class="inline-actions"><span class="badge-subtle">${p.draft?'本地草稿':p.source==='example'?'示例模型':'我的修改稿'}</span>${p.favorite?`<span class="badge">${icon('heart')}已收藏</span>`:''}</div><h3 class="work-title">${esc(p.title)}</h3><p class="work-meta">${p.pieces.length} 颗积木 · 版本 ${p.version||1}${compact?'':` · ${new Date(p.updatedAt).toLocaleDateString('zh-CN',{timeZone:'Asia/Shanghai'})}`}</p><div class="work-actions"><button class="button button-secondary button-small" data-action="open-work" data-project-id="${esc(p.id)}">继续创作 ${icon('arrow-right')}</button>${compact?'':`<button class="button button-icon button-ghost" data-action="favorite-work" data-project-id="${esc(p.id)}" aria-label="${p.favorite?'取消收藏':'收藏'} ${esc(p.title)}" aria-pressed="${!!p.favorite}">${icon('heart')}</button><button class="button button-icon button-ghost" data-action="delete-work" data-project-id="${esc(p.id)}" aria-label="删除 ${esc(p.title)}">${icon('trash')}</button>`}</div></div></article>`}
+function renderRecent(){const node=$('#recent-works');if(!node)return;node.innerHTML=state.projects.length?state.projects.slice(0,3).map(p=>workCard(p,true)).join(''):`<button class="recent-example" data-action="open-example"><span class="part-thumb">${icon('cube')}</span><span><strong>从一颗苹果开始</strong><span>打开示例，体验逐块搭建与自由编辑</span></span>${icon('arrow-up-right')}</button>`}
+function renderWorks(){if(!$('#works-grid'))return;const q=state.worksSearch.trim().toLowerCase();const projects=state.projects.filter(p=>(state.worksFilter!=='favorites'||p.favorite)&&(state.worksFilter!=='edited'||p.source==='user')&&(!q||p.title.toLowerCase().includes(q)));$('#works-grid').innerHTML=projects.map(p=>workCard(p)).join('');$('#works-empty').hidden=projects.length>0;$('#works-empty').innerHTML=`${icon(state.worksFilter==='favorites'?'heart':'folder-open')}<h3>${state.worksFilter==='favorites'?'还没有收藏的模型':q?'没有匹配的作品':'你的第一件作品，从这里开始'}</h3><p>${q?'换个名称试试。':'打开示例，搭建、修改，然后将模型保存到这里。'}</p><button class="button button-primary" data-action="open-example">打开苹果示例 ${icon('arrow-right')}</button>`}
+
+async function imageFromFile(file){if(!file)return;try{if(!/^image\/(jpeg|png|webp|gif|heic|heif)$/.test(file.type))throw new Error('请选择 JPG、PNG 或 WebP 图片。');if(file.size>15*1024*1024)throw new Error('图片较大，请选择 15 MB 以内的图片。');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('图片无法读取，请重试。'));reader.readAsDataURL(file)});const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(new Error('浏览器无法预览这张图片，请换成 JPG 或 PNG。'));im.src=data});const size=Math.min(1,1200/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*size));canvas.height=Math.max(1,Math.round(img.height*size));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);state.referenceImage=canvas.toDataURL('image/jpeg',.86);state.referenceName=file.name||'相机照片';renderSource();toast('参考图片已就绪。AI 生成能力稍后接入。')}catch(e){toast(e.message,'error')}finally{$('#image-input').value='';$('#capture-input').value=''}}
+function renderSource(){const node=$('#source-preview');if(!node)return;if(state.referenceImage){node.innerHTML=`<img class="source-image" src="${state.referenceImage}" alt="上传的参考图片"><div class="source-preview-caption"><strong>${esc(state.referenceName)}</strong><span>参考图片已就绪</span></div>`;node.classList.add('has-image')}else{node.innerHTML=`<div class="upload-prompt">${icon('image-square')}<strong>把灵感，放在这里。</strong><span>拖入图片，或选择上传 / 拍照</span><small>JPG、PNG、WebP · 最大 15 MB</small></div>`;node.classList.remove('has-image')}$('#generate-button').disabled=!state.referenceImage;$$('[data-action="clear-image"]').forEach(b=>b.hidden=!state.referenceImage);$('#generation-status').textContent=state.referenceImage?'参考图片已就绪 · AI 生成暂未接入':'上传图片或拍照，开始你的创作。AI 生成暂未接入。'}
+async function openCamera(){if(innerWidth<700&&/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){$('#capture-input').click();return}if(!navigator.mediaDevices?.getUserMedia){$('#capture-input').click();return}const dialog=$('#camera-dialog');$('#camera-status').textContent='请允许相机访问，准备好后可以拍摄或重拍。';dialog.showModal();try{const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(!dialog.open){stream.getTracks().forEach(t=>t.stop());return}state.camera=stream;$('#camera-video').srcObject=stream;await $('#camera-video').play();$('#camera-status').textContent='调整构图，点击下方按钮拍照。'}catch(e){$('#camera-status').textContent=e.name==='NotAllowedError'?'相机权限未开启。你也可以上传已有照片。':'相机暂时不可用，请上传已有照片。';toast('相机暂时无法打开，可以改用上传图片。','error')}}
+function stopCamera(){if(state.camera){state.camera.getTracks().forEach(t=>t.stop());state.camera=null}const video=$('#camera-video');if(video)video.srcObject=null}
+function closeCamera(){stopCamera();$('#camera-dialog')?.close()}
+function captureCamera(){const video=$('#camera-video');if(!video.videoWidth){toast('相机还未准备好，可以先上传图片。','error');return}const canvas=$('#camera-canvas');const scale=Math.min(1,1200/video.videoWidth);canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);state.referenceImage=canvas.toDataURL('image/jpeg',.86);state.referenceName='相机照片';closeCamera();renderSource();toast('照片已拍好，可以更换图片或继续。')}
+function openSource(){if(state.project?.sourceImage){$('#source-dialog-image').src=state.project.sourceImage;$('#source-dialog').showModal()}else toast('当前为苹果示例模型，没有来源照片。新建创作可上传自己的图片。')}
+
+async function handleAction(action,button){if(state.busy&&['use-part','piece-color','rotate-piece','replace-piece','delete','undo','redo','favorite-work','delete-work','confirm-delete-work'].includes(action)){toast('正在保存，请稍等一下。');return}try{switch(action){case 'new':setPage('create');break;case 'upload':$('#image-input').click();break;case 'camera':await openCamera();break;case 'capture':captureCamera();break;case 'close-camera':closeCamera();break;case 'clear-image':state.referenceImage=null;state.referenceName='';renderSource();break;case 'generate':if(state.referenceImage)$('#generation-dialog').showModal();break;case 'open-example':$$('dialog[open]').forEach(d=>d.close());await openExample();break;case 'retry-model':enginePromise=null;await openProject(state.project);break;case 'close-dialog':button.closest('dialog')?.close();break;case 'source':openSource();break;case 'favorite':await toggleFavorite();break;case 'save':await saveVersion();break;case 'export-image':await exportImage();break;case 'export-parts':exportParts();break;case 'previous':pause();progressTo(state.progress-1,false);break;case 'next':pause();progressTo(state.progress+1);break;case 'play':togglePlay();break;case 'restart':pause();progressTo(0,false);break;case 'jump':pause();progressTo(+button.dataset.count,false);break;case 'rotate':if(state.placementPart){cancelPlacement();renderPanels()}state.rotating=!state.rotating;engine?.setAutoRotate(state.rotating);updateSceneLabels();break;case 'explode':if(state.placementPart){cancelPlacement();renderPanels()}state.exploded=!state.exploded;engine?.setExploded(state.exploded);updateSceneLabels();break;case 'zoom-in':engine?.zoomBy(1.12);break;case 'zoom-out':engine?.zoomBy(1/1.12);break;case 'reset-view':engine?.resetView();break;case 'use-part':if(state.catalogColor!=='all')state.placementColor=state.catalogColor;await usePart(button.dataset.partId);break;case 'placement-color':state.placementColor=button.dataset.color;if(state.placementPart)engine?.setPlacement(state.placementPart,state.placementColor,state.placementRotation);renderLeft();break;case 'piece-color':editSelected({color:button.dataset.color});break;case 'rotate-piece':{const p=selectedPiece();if(p)editSelected({ry:((p.ry||0)+Math.PI/2)%(Math.PI*2)});break}case 'replace-piece':{const old=selectedPiece(),part=findPart($('#replacement-part')?.value);if(old&&part){const candidate=createPiece(part,old.color,{x:old.x,y:old.y-old.h/2+part.h/2,z:old.z,ry:old.ry||0,rz:0});editSelected({...candidate,id:old.id})}break}case 'deselect':state.selectedId=null;engine?.selectPiece(null);renderRight();renderPlayer();break;case 'add':if(!state.placementPart){openMobilePanel('left');toast('先从零件库选择一颗积木，再点击模型或底板放置。')}else toast('点击模型顶面或底板上的空位即可放置。');break;case 'cancel-placement':cancelPlacement();renderPanels();break;case 'delete':removeSelected();break;case 'undo':undo();break;case 'redo':redo();break;case 'clear-catalog':state.catalogSearch='';state.catalogCategory='all';state.catalogColor='all';$('#catalog-search').value='';$('#catalog-category').value='all';$('#catalog-color').value='all';renderCatalog();break;case 'open-work':{const p=await library.get(button.dataset.projectId);if(p)await openProject(p);else toast('没有找到这件本地作品。','error');break}case 'favorite-work':{const id=button.dataset.projectId;if(state.project?.id===id){await toggleFavorite();break}await writeQueue.catch(()=>{});const p=await library.get(id);if(p){p.favorite=!p.favorite;p.updatedAt=new Date().toISOString();await queueStore(p);await refreshProjects()}break}case 'delete-work':requestDelete(button.dataset.projectId);break;case 'confirm-delete-work':button.closest('dialog')?.close();await deleteWork(button.dataset.projectId);break;case 'close-panel':closeMobilePanel();break;default:break}}catch(e){console.error(e);toast(e.message||'这一步暂时未能完成，请重试。','error')}}
+
+document.addEventListener('click',e=>{const button=e.target.closest('button');if(!button||button.disabled)return;if(button.dataset.action){handleAction(button.dataset.action,button);return}if(button.dataset.page){setPage(button.dataset.page);return}if(button.dataset.mode){changeMode(button.dataset.mode);return}if(button.dataset.panel)openMobilePanel(button.dataset.panel)});
+document.addEventListener('input',e=>{const t=e.target;if(t.id==='project-title'&&state.project&&!state.busy&&t.value.trim()&&t.value!==state.project.title){const start=t.selectionStart,end=t.selectionEnd;ensureWritable();recordUndo();state.project.title=t.value.slice(0,80);markChanged();t.setSelectionRange(start,end)}else if(t.id==='progress-range'){pause();progressTo(+t.value,false)}else if(t.id==='catalog-search'){state.catalogSearch=t.value;renderCatalog()}else if(t.id==='mini-search'){state.miniSearch=t.value;renderMiniParts()}else if(t.id==='works-search'){state.worksSearch=t.value;renderWorks()}});
+document.addEventListener('change',e=>{const t=e.target;if(state.busy&&(t.dataset.coordinate||t.id==='project-title')){renderProjectHeader();if(state.project)renderRight();return;}if(t.id==='image-input'||t.id==='capture-input')imageFromFile(t.files?.[0]);else if(t.id==='play-speed'){state.speed=+t.value}else if(t.id==='catalog-category'){state.catalogCategory=t.value;renderCatalog()}else if(t.id==='catalog-color'){state.catalogColor=t.value;renderCatalog()}else if(t.id==='works-filter'){state.worksFilter=t.value;renderWorks()}else if(t.id==='project-title'&&state.project){const value=t.value.trim().slice(0,80)||'未命名作品';if(value!==state.project.title){ensureWritable();recordUndo();state.project.title=value;markChanged()}}else if(t.dataset.coordinate){const p=selectedPiece(),v=Number(t.value);if(p&&Number.isFinite(v))editSelected({[t.dataset.coordinate]:v*UNIT})}});
+$('#source-preview').addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('drag-over')});$('#source-preview').addEventListener('dragleave',e=>e.currentTarget.classList.remove('drag-over'));$('#source-preview').addEventListener('drop',e=>{e.preventDefault();e.currentTarget.classList.remove('drag-over');imageFromFile(e.dataTransfer.files?.[0])});
+$$('dialog').forEach(dialog=>{dialog.addEventListener('click',e=>{if(e.target===dialog){const r=dialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom){if(dialog.id==='camera-dialog')stopCamera();dialog.close()}}});dialog.addEventListener('close',()=>{if(dialog.id==='camera-dialog')stopCamera()})});
+window.addEventListener('resize',()=>{if(innerWidth>760&&$('#page-studio')?.dataset.panel!=='canvas')closeMobilePanel()});
+window.addEventListener('keydown',e=>{if(document.querySelector('dialog[open]')||e.target.matches('input,select,textarea'))return;if(e.key==='Escape'){cancelPlacement();closeMobilePanel();if(state.project)renderPanels();return}if(state.page!=='studio'||!state.project)return;if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'){e.preventDefault();e.shiftKey?redo():undo();return}if(state.mode==='build'&&(e.key==='ArrowLeft'||e.key==='ArrowRight')){e.preventDefault();pause();progressTo(state.progress+(e.key==='ArrowRight'?1:-1),e.key==='ArrowRight')}if(e.code==='Space'&&state.mode==='build'){e.preventDefault();togglePlay()}if((e.key==='Delete'||e.key==='Backspace')&&state.mode==='edit'){e.preventDefault();removeSelected()}if(e.key.toLowerCase()==='r'&&state.placementPart){state.placementRotation=(state.placementRotation+Math.PI/2)%(Math.PI*2);engine?.setPlacement(state.placementPart,state.placementColor,state.placementRotation)}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){pause();stopCamera()}});window.addEventListener('pagehide',e=>{pause();stopCamera();clearTimeout(draftTimer);if(!e.persisted)engine?.dispose()});
+configureCatalog();renderSource();renderWorks();renderRecent();$$('[data-action="save"],[data-action="export-image"]').forEach(b=>b.disabled=true);state.initialized=true;document.body.dataset.ready='true';
+await refreshProjects();
+try{const lastPage=localStorage.getItem('brickit-current-page'),activeId=localStorage.getItem('brickit-active-id');if(lastPage==='studio'&&activeId){const p=await library.get(activeId);if(p)await openProject(p)}else if(lastPage==='works'||lastPage==='catalog')setPage(lastPage)}catch{}
+window.brickit={get state(){return {page:state.page,mode:state.mode,progress:state.progress,total:state.project?.pieces.length||0,playing:state.playing,selectedId:state.selectedId,placement:state.placementPart?.id,projectId:state.project?.id,version:state.project?.version,draft:!!state.project?.draft,works:state.projects.length,engine:engine?.state}},get project(){return state.project?cloneProject(state.project):null}};
