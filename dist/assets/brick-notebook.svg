@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木笔记本</title>
+  <path d="m10 14 35-6 11 7v41l-39 7-7-7Z" fill="#7c916c" stroke="#6e835d" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m44 7 11 7v40l-11-4Z" fill="#f0efdf" stroke="#a8b298" stroke-width="1" stroke-linejoin="round"/>
+  <path d="m46 15 7 3m-7 5 7 3m-7 5 7 3m-7 5 7 3m-7 5 7 3" stroke="#ccd2bc" stroke-width=".9"/>
+  <path d="m9 11 35-6v46L9 57Z" fill="#becda7" stroke="#849b6d" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m9 11 7-1v46l-7 1Z" fill="#8caa77"/>
+  <path d="m17 12 24-4" stroke="#e7eed7" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="m17 42 27-5m-19 4v13M28 9v13" stroke="#9caf86" stroke-width=".8"/>
+  <path d="m20 26 18-3v15l-18 3Z" fill="#f8f7ed" stroke="#a7b693" stroke-width=".85"/>
+  <path d="m24 30 10-2m-10 7 7-1" stroke="#acb89d" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="m34 7 6-1v18l-3-2-3 3Z" fill="#ce755d" stroke="#b15c46" stroke-width=".65" stroke-linejoin="round"/>
+  <g stroke="#94a97e" stroke-width=".65">
+    <path d="M19 17v2c0 2.7 7 2.7 7 0v-2" fill="#9eb589"/>
+    <ellipse cx="22.5" cy="17" rx="3.5" ry="2" fill="#e8eed9"/>
+    <path d="M29 15v2c0 2.7 7 2.7 7 0v-2" fill="#9eb589"/>
+    <ellipse cx="32.5" cy="15" rx="3.5" ry="2" fill="#e8eed9"/>
+  </g>
+  <g fill="#eff1de" stroke="#6e855e" stroke-width="1.7">
+    <ellipse cx="11.5" cy="20" rx="2.3" ry="2.5"/><ellipse cx="11.5" cy="30" rx="2.3" ry="2.5"/>
+    <ellipse cx="11.5" cy="40" rx="2.3" ry="2.5"/><ellipse cx="11.5" cy="50" rx="2.3" ry="2.5"/>
+  </g>
+</svg>

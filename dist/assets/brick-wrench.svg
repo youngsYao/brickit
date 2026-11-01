@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木扳手</title>
+  <path d="m35 26 11 9-23 25H12l-7-7V42Z" fill="#718564" stroke="#647956" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m35 22 11 10-24 25H11l-6-7V39Zm-18 18-5 3v6l5 3 5-3v-6Z" fill="#bbcca4" fill-rule="evenodd" stroke="#82996c" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="M40 9h8l-6 11 7 7 11-6v8l-9 9H40l-9-9V18Z" fill="#7c916d" stroke="#6c815c" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="M40 5h8l-6 11 7 7 11-6v8l-9 9H40l-9-9V14Z" fill="#cfdbbc" stroke="#849c70" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m33 14 5-6h5m-7 19 6 5h8" stroke="#ebf0df" stroke-width="1.4" stroke-linecap="round"/>
+  <path d="m20 37 9 8m-2-15 9 8M37 9v12m3 9 4-6" stroke="#96aa80" stroke-width=".8"/>
+  <g stroke="#8ea478" stroke-width=".7">
+    <path d="M29 28v2.5c0 3 7 3 7 0V28" fill="#9bb186"/>
+    <ellipse cx="32.5" cy="28" rx="3.5" ry="2.1" fill="#e7eed9"/>
+    <path d="M22 36v2.5c0 3 7 3 7 0V36" fill="#9bb186"/>
+    <ellipse cx="25.5" cy="36" rx="3.5" ry="2.1" fill="#e7eed9"/>
+  </g>
+  <path d="m27 42 4 3-3 3-4-3Z" fill="#ce7259"/>
+  <path d="m12 43 5-3 5 3v6l-5 3-5-3Z" fill="#f7f6ef" stroke="#879d73" stroke-width="1.1"/>
+</svg>

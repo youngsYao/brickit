@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>已收藏的积木爱心</title>
+  <path d="m7 18 8-7h10l7 7 7-7h10l8 8v14L32 60 7 35Z" fill="#a64e3d" stroke="#964334" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m7 14 8-7h10l7 7 7-7h10l8 8v14L32 56 7 31Z" fill="#d97c60" stroke="#b35943" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m10 14 6-5h8m15 0h9l6 6" stroke="#f4c8a9" stroke-width="1.2" stroke-linecap="round"/>
+  <path d="M7 25h50M13 37h36m-26-12v12m18-12v12m-9 0v18M25 7v18m14-18v18" stroke="#bd644c" stroke-width=".8"/>
+  <g stroke="#be6b4e" stroke-width=".65">
+    <path d="M14 12v2c0 2.7 7 2.7 7 0v-2" fill="#c66b51"/>
+    <ellipse cx="17.5" cy="12" rx="3.5" ry="1.9" fill="#f3b593"/>
+    <path d="M42 12v2c0 2.7 7 2.7 7 0v-2" fill="#c66b51"/>
+    <ellipse cx="45.5" cy="12" rx="3.5" ry="1.9" fill="#f3b593"/>
+    <path d="M20 29v2.3c0 3 8 3 8 0V29" fill="#bf634b"/>
+    <ellipse cx="24" cy="29" rx="4" ry="2.2" fill="#edaa84"/>
+    <path d="M37 29v2.3c0 3 8 3 8 0V29" fill="#bf634b"/>
+    <ellipse cx="41" cy="29" rx="4" ry="2.2" fill="#edaa84"/>
+    <path d="M28 42v2.3c0 3 8 3 8 0V42" fill="#bf634b"/>
+    <ellipse cx="32" cy="42" rx="4" ry="2.2" fill="#edaa84"/>
+  </g>
+</svg>

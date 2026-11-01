@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木纸箱</title>
+  <ellipse cx="32" cy="60" rx="24" ry="2.7" fill="#667456" opacity=".1"/>
+  <path d="m10 27 22 12v22L10 49Z" fill="#d4c6a6" stroke="#a79b7a" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m32 39 22-12v22L32 61Z" fill="#b8aa87" stroke="#988f70" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m10 27 22-12 22 12-22 12Z" fill="#899679" stroke="#7b896b" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m10 27-8-8L24 7l8 8Z" fill="#dfe3c7" stroke="#a4b18c" stroke-width="1" stroke-linejoin="round"/>
+  <path d="m32 15 9-8 21 12-8 8Z" fill="#c9d3b3" stroke="#98a581" stroke-width="1" stroke-linejoin="round"/>
+  <path d="m10 27 22 12-8 9L2 36Z" fill="#e3d8bb" stroke="#b4a584" stroke-width="1" stroke-linejoin="round"/>
+  <path d="m32 39 22-12 8 9-21 12Z" fill="#d1c5a5" stroke="#a59879" stroke-width="1" stroke-linejoin="round"/>
+  <path d="m4 36 20 11m18 0 18-10" stroke="#f6edd7" stroke-width="1.1"/>
+  <path d="m10 47 22 12 22-12m-35-1v8m27-12v11M15 25l-7-7m39 5 8-8" stroke="#acaa85" stroke-width=".8"/>
+  <g stroke="#a3af88" stroke-width=".65">
+    <path d="M12 20v2c0 2.8 7 2.8 7 0v-2" fill="#aab895"/>
+    <ellipse cx="15.5" cy="20" rx="3.5" ry="1.9" fill="#f0f1db"/>
+    <path d="M42 19v2c0 2.8 7 2.8 7 0v-2" fill="#9cab86"/>
+    <ellipse cx="45.5" cy="19" rx="3.5" ry="1.9" fill="#e8edd4"/>
+    <path d="M15 37v2c0 2.8 7 2.8 7 0v-2" fill="#c0b591"/>
+    <ellipse cx="18.5" cy="37" rx="3.5" ry="1.9" fill="#f4ead1"/>
+    <path d="M43 37v2c0 2.8 7 2.8 7 0v-2" fill="#b4aa87"/>
+    <ellipse cx="46.5" cy="37" rx="3.5" ry="1.9" fill="#e9e0c3"/>
+  </g>
+  <path d="m18 48 7 4v5l-7-4Z" fill="#c97155"/>
+</svg>

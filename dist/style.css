@@ -97,3 +97,10 @@
 .recent-empty>.brick-ui-icon{width:24px;height:24px}
 .empty-symbol>.brick-ui-icon{width:42px;height:42px}
 @media(max-width:760px){.header-new>.brick-ui-icon{width:23px;height:23px}.nav-link>.brick-ui-icon{width:19px;height:19px}}
+.header-actions [data-action="save"]>.brick-ui-icon{width:22px;height:22px}
+.favorite-button .icon.brick-ui-icon{width:20px!important;height:20px!important}
+.work-actions .button-icon>.brick-ui-icon{width:20px;height:20px}
+.example-caption .brick-ui-icon{width:17px;height:17px}
+.work-card-body>.inline-actions .badge>.brick-ui-icon{width:13px;height:13px}
+.page-heading>.badge>.brick-ui-icon{width:15px;height:15px}
+@media(max-width:760px){.header-actions [data-action="save"]>.brick-ui-icon{width:18px;height:18px}.favorite-button .icon.brick-ui-icon{width:18px!important;height:18px!important}}

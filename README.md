@@ -58,3 +58,5 @@ AI 入口已提供图片 / 拍照与生成设置；当前不发送图片至 AI �
 相机模型与颜色、方向控件使用原生 SVG 几何绘制。方向图按同一块示例积木的真实 Y 轴朝向投影，凸点按目录颜色着色，选中状态、颜色名称和角度文字均由当前编辑状态更新。
 
 搜索、作品文件夹与新建创作使用同一套原生 SVG 积木图标：`dist/assets/brick-search.svg`、`brick-folder.svg` 与 `brick-brush.svg`。图形包含凸点、拼缝和浅灰绿立体侧面，并在搜索框、页头、作品导航及动态空状态中复用。
+
+工作台、零件仓库、保存版本与收藏分别使用 `brick-wrench.svg`、`brick-box.svg`、`brick-notebook.svg` 和 `brick-heart.svg`。收藏后切换为砖红色实心的 `brick-heart-filled.svg`，同步用于工作台收藏按钮、作品卡片和收藏标记。
