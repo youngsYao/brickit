@@ -104,3 +104,20 @@
 .work-card-body>.inline-actions .badge>.brick-ui-icon{width:13px;height:13px}
 .page-heading>.badge>.brick-ui-icon{width:15px;height:15px}
 @media(max-width:760px){.header-actions [data-action="save"]>.brick-ui-icon{width:18px;height:18px}.favorite-button .icon.brick-ui-icon{width:18px!important;height:18px!important}}
+
+/* Native brick icons share dimensions with their controls, including compact states. */
+.icon.brick-ui-icon{pointer-events:none;user-select:none}
+.button-small>.brick-ui-icon{width:18px;height:18px}
+.button-icon>.brick-ui-icon{width:21px;height:21px}
+.view-tool>.brick-ui-icon{width:23px;height:23px}
+.view-tool[aria-pressed=true]>.brick-ui-icon{filter:saturate(1.15)}
+.mobile-panel-tabs .brick-ui-icon{width:20px;height:20px}
+.generation-status>.brick-ui-icon,.catalog-notice>.brick-ui-icon{width:18px;height:18px;flex-shrink:0}
+.generation-status>span{min-width:0}
+.stage-help>.brick-ui-icon{width:19px;height:19px}
+.empty-state>.brick-ui-icon{width:42px;height:42px;margin:0 auto 8px}
+.dialog-symbol>.brick-ui-icon{width:34px;height:34px}
+.loading-mark>.brick-ui-icon{width:32px;height:32px}
+.toast>.brick-ui-icon{width:21px;height:21px}
+.drawer-head .brick-ui-icon,.dialog-heading .brick-ui-icon{width:19px;height:19px}
+@media(max-width:760px){.player-buttons .brick-ui-icon{width:17px;height:17px}.view-tool>.brick-ui-icon{width:21px;height:21px}.edit-buttons>.button-icon>.brick-ui-icon{width:20px;height:20px}}

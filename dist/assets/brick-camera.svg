@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木相机拍照</title>
+  <g transform="translate(-6 -4) scale(.48)">
+  <defs>
+    <linearGradient id="camera-shell" x2="0" y2="1"><stop stop-color="#f4f0e3"/><stop offset="1" stop-color="#d6d0bb"/></linearGradient>
+    <linearGradient id="camera-side" x2="1" y2="1"><stop stop-color="#b8bfaa"/><stop offset="1" stop-color="#87937e"/></linearGradient>
+    <linearGradient id="camera-lens" x2="1" y2="1"><stop stop-color="#7d8b88"/><stop offset=".45" stop-color="#394c4e"/><stop offset="1" stop-color="#243336"/></linearGradient>
+    <radialGradient id="camera-glass" cx=".35" cy=".3"><stop stop-color="#87b1b5"/><stop offset=".4" stop-color="#476f76"/><stop offset="1" stop-color="#192b31"/></radialGradient>
+  </defs>
+  <ellipse cx="82" cy="121" rx="51" ry="8" fill="#48523e" opacity=".1"/>
+  <path d="m27 51 79 21v42L27 93Z" fill="url(#camera-shell)" stroke="#bfc2ad" stroke-linejoin="round"/>
+  <path d="m106 72 29-18v42l-29 18Z" fill="url(#camera-side)" stroke="#87917b" stroke-linejoin="round"/>
+  <path d="m27 51 29-18 79 21-29 18Z" fill="#ececdb" stroke="#c0c7b1" stroke-linejoin="round"/>
+  <path d="m27 91 79 21v8L27 99Z" fill="#4c5b50"/>
+  <path d="m106 112 29-18v8l-29 18Z" fill="#37493e"/>
+  <g fill="none" stroke="#afb6a0" stroke-width="1" opacity=".85">
+    <path d="m27 72 79 21 29-18M48 57v20m35-11v20m-45-11v20m55-5v20M120 63v21m5-4v22"/>
+  </g>
+  <g fill="#d9deca" stroke="#b1bba1" stroke-width=".7">
+    <path d="M43 41v3c0 4 13 4 13 0v-3"/><ellipse cx="49.5" cy="41" rx="6.5" ry="3.3" fill="#f0f1e2"/>
+    <path d="M61 46v3c0 4 13 4 13 0v-3"/><ellipse cx="67.5" cy="46" rx="6.5" ry="3.3" fill="#f0f1e2"/>
+    <path d="M101 49v3c0 4 13 4 13 0v-3"/><ellipse cx="107.5" cy="49" rx="6.5" ry="3.3" fill="#f0f1e2"/>
+  </g>
+  <path d="m69 28 15-9 25 7-15 9v15l-25-7Z" fill="#657461" stroke="#4f6250" stroke-linejoin="round"/>
+  <path d="m69 28 15-9 25 7-15 9Z" fill="#a7b49a"/>
+  <path d="m94 35 15-9v15l-15 9Z" fill="#425743"/>
+  <path d="m74 31 14 4v8l-14-4Z" fill="#253d3e"/>
+  <path d="m76 32 8 2-8 3Z" fill="#94b9b2" opacity=".7"/>
+  <path d="M115 40v5c0 5 15 5 15 0v-5" fill="#b62d28"/>
+  <ellipse cx="122.5" cy="40" rx="7.5" ry="4" fill="#e24c3b" stroke="#bd3329"/>
+  <ellipse cx="119.5" cy="38.7" rx="3.2" ry="1.1" fill="#ffb4a1" opacity=".6"/>
+  <path d="m32 58 12 3v9l-12-3Z" fill="#faf7ed" stroke="#c5c7b5"/>
+  <path d="m106 80 4 1v20l-4 2Z" fill="#4e604f"/>
+  <ellipse cx="74" cy="82" rx="25" ry="27" fill="#354a47" transform="rotate(-15 74 82)"/>
+  <path d="m66 57 12-1c18 1 25 38 8 48l-14 4Z" fill="#3d514e"/>
+  <ellipse cx="66" cy="83" rx="24" ry="26" fill="url(#camera-lens)" stroke="#82908a" stroke-width="1.2" transform="rotate(-15 66 83)"/>
+  <ellipse cx="66" cy="83" rx="18.5" ry="20.5" fill="#192d31" stroke="#9aa8a0" stroke-width="1.5" transform="rotate(-15 66 83)"/>
+  <ellipse cx="65" cy="82" rx="13.5" ry="15.5" fill="url(#camera-glass)" stroke="#4b686b" transform="rotate(-15 65 82)"/>
+  <ellipse cx="61" cy="75" rx="4" ry="7" fill="#cce2d8" opacity=".5" transform="rotate(33 61 75)"/>
+  <circle cx="70" cy="89" r="2.2" fill="#a8c5bd" opacity=".5"/>
+</g>
+</svg>

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木信息提示</title>
+  <path d="M20 5h24l15 15v24L44 59H20L5 44V20Z" fill="#849e90" transform="translate(0 2)" fill-rule="evenodd" stroke="#7d978b" stroke-width="1" stroke-linejoin="round"/><path d="M20 5h24l15 15v24L44 59H20L5 44V20Z" fill="#c4d5cc" fill-rule="evenodd" stroke="#7d978b" stroke-width="1" stroke-linejoin="round"/><path d="M28 27h8v23h-8Z" fill="#a2baaa" transform="translate(0 1)" fill-rule="evenodd" stroke="#98b29f" stroke-width="1" stroke-linejoin="round"/><path d="M28 27h8v23h-8Z" fill="#f4f6e9" fill-rule="evenodd" stroke="#98b29f" stroke-width="1" stroke-linejoin="round"/><path d="M28 16v2.2a4 1.8 0 0 0 8 0v-2.2" fill="#a2baaa" /><ellipse cx="32" cy="16" rx="4" ry="1.9" fill="#fffef4" stroke="#98b29f" stroke-width=".65"/><path d="M5 32h10m34 0h10" fill="none" stroke="#7d978b" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
