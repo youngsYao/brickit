@@ -111,12 +111,31 @@ export function createExampleProject() {
   return {
     id:'apple-example',title:'一颗苹果',source:'example',sourceImage:null,
     createdAt:now,updatedAt:now,favorite:false,version:1,
-    pieces:createDefaultPieces(),settings:{size:'medium',style:'classic'}
+    pieces:createDefaultPieces(),originalPieces:createDefaultPieces(),settings:{size:'medium',style:'classic'}
   };
 }
 export function cloneProject(project) {
   if(project == null) return project;
   return typeof structuredClone === 'function' ? structuredClone(project) : JSON.parse(JSON.stringify(project));
+}
+// Keep the generation/template baseline inside every draft so it survives reloads
+// and the removal of an earlier saved version. Older apple drafts can be repaired.
+export async function resolveOriginalPieces(project, getProject = id => library.get(id)) {
+  const visited=new Set();
+  let current=project;
+  for(let depth=0;current&&depth<60;depth++) {
+    if(Array.isArray(current.originalPieces))return cloneProject(current.originalPieces);
+    if(current.id==='apple-example'||current.rootId==='apple-example'||current.source==='example')return createDefaultPieces();
+    if(current.id&&visited.has(current.id))break;
+    if(current.id)visited.add(current.id);
+    if(!current.draft&&!current.parentId&&(!current.rootId||current.rootId===current.id))return cloneProject(current.pieces);
+    const next=current.parentId&&!visited.has(current.parentId)?current.parentId:current.rootId&&!visited.has(current.rootId)?current.rootId:null;
+    if(!next)break;
+    current=await getProject(next);
+    if(!current&&project.rootId&&!visited.has(project.rootId))current=await getProject(project.rootId);
+  }
+  // A legacy draft with no remaining source cannot be truthfully reconstructed.
+  return null;
 }
 export function createPiece(partOrId, color, position = {}) {
   position = position && typeof position === 'object' ? position : {};
