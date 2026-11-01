@@ -1,0 +1,24 @@
+[project]
+name = "brick-it-server"
+version = "0.1.0"
+description = "Local BrickWright photo-to-brick generation service for brick.it"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "uvicorn>=0.30,<1",
+  "python-dotenv>=1,<2",
+  "pillow>=11,<13",
+  "brickwright",
+  "bricklayer-sdk",
+]
+
+[tool.uv.sources]
+brickwright = { git = "https://github.com/AvaLovelace1/brickwright.git", rev = "f8a90d1a416582e945505398311ffa397aa84959", subdirectory = "packages/brickwright" }
+bricklayer-sdk = { git = "https://github.com/AvaLovelace1/brickwright.git", rev = "f8a90d1a416582e945505398311ffa397aa84959", subdirectory = "packages/bricklayer" }
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1"]
+
+[tool.pytest.ini_options]
+testpaths = ["server/tests"]
+pythonpath = ["."]

@@ -1,6 +1,6 @@
 # brick.it
 
-一个以图片创作为入口的积木模型工作台。现阶段 AI 生成接口和真实零件数据库暂未接入，页面会明确说明；可以使用苹果示例体验完整的搭建、编辑和收藏流程。
+一个以图片创作为入口的积木模型工作台。已接入官方 BrickWright / BrickLayer：照片 → AI 编写装配程序 → 几何校验 → 渲染与照片对照 → 反馈修正 → 导入三维工作台。生成需要在本地服务端配置模型 API Key 与 LDraw 零件库；未配置时仍可使用苹果示例、编辑和本地作品库，不会把示例伪装成生成结果。
 
 ## 已实现
 
@@ -22,26 +22,103 @@
 
 ## 本地运行
 
-需要 Python 3，在本目录运行：
+需要 [uv](https://docs.astral.sh/uv/)；uv 会安装符合要求的 Python（≥ 3.12）。在本目录运行：
 
 ```sh
-python3 -m http.server 4173 --directory dist
+uv sync --locked
+cp .env.example .env
 ```
 
-打开 http://localhost:4173 。静态页面的依赖、字体和图片均在本地；请使用支持 WebGL 2 的现代浏览器。相机需要浏览器授权，并在 HTTPS 或 localhost 下使用。
+在 `.env` 中设置：
 
-## 数据与后续接入
+- `BRICKWRIGHT_GENERATION_MODEL`：支持图像输入与工具调用的模型，使用 `openai/`、`anthropic/` 或 `gemini/` 前缀。
+- 对应服务商的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 `GEMINI_API_KEY`。
+- `LDRAW_LIBRARY_PATH`：从 [LDraw 官方零件库](https://library.ldraw.org/updates?latest) 下载并解压后的 `ldraw` 目录绝对路径。
+
+然后启动：
+
+```sh
+npm run dev
+```
+
+打开 [http://127.0.0.1:4173](http://127.0.0.1:4173)。生成服务和静态页面共用同一地址。点击“生成”后，照片会发送至配置的模型服务商。相机需要浏览器授权，并在 HTTPS 或 localhost 下使用；三维工作台需要 WebGL 2。
+
+只运行原有静态工作台可使用 `npm run dev:static`，此时生成入口会明确显示服务不可用。已有静态托管不会自动获得 Python 后端。
+
+## LDraw 零件仓库
+
+本机已下载并解压官方 LDraw 完整零件库至 `~/.cache/brick-it/ldraw`，并在未提交的 `.env` 中设置 `LDRAW_LIBRARY_PATH`。当前库有 24,985 个顶层零件文件，其中 21,676 种具备本项目所需的 SDK 元数据和工作台网格，可以在仓库浏览。数字会随以后更新的零件库变化。
+
+打开“零件仓库”即可查看真实模型缩略图，无需 AI API Key。仓库使用 Three.js r180 的官方 `LDrawLoader`，直接读取本地 `.dat` 文件及子件、基础图元和 `LDConfig.ldr`。每页 24 件，按可见范围加载；所有缩略图共享一个离屏渲染器，并缓存模型和图片。
+
+支持编号、英文名称与常见中文类别搜索、分类筛选、分页和预览颜色切换。点击“在工作台使用”会读取该零件的 SDK 网格，放置后随作品保存；仓库完整 LDraw 外观与工作台用于编辑的内缩碰撞网格有少许区别。预览颜色不代表该零件颜色组合实际在售。
+
+如需在其他机器下载，可从 [LDraw 官方下载页](https://library.ldraw.org/updates?latest) 获取完整库，解压后设置 `LDRAW_LIBRARY_PATH`，重启服务。零件文件仅通过受限的只读接口提供，不能读取库目录之外的文件。
+
+## BrickWright 生成流程
+
+直接依赖 [官方仓库](https://github.com/AvaLovelace1/brickwright)，固定提交 `f8a90d1a416582e945505398311ffa397aa84959`，依赖版本记录于 `uv.lock`。不复制论文指标，也不使用预制模型代替 AI 结果。
+
+1. 浏览器缩小并上传图片，可附加提示词、模型大小和风格。
+2. 本地服务保存任务，启动可终止的独立生成进程，使用官方 `run_agent()`。
+3. AI 使用真实目录零件编写 `build.py`，根据 `validate()` 返回的错误修正结构。
+4. 开启两轮视觉评审：多视角渲染、匹配参考观察角度、对照照片并反馈修改。
+5. `finalize()` 后重新读取实际导出的 LDraw 文件，独立强制检查：非空、件数上限、无碰撞、无悬空、单一连接组件。未完成、预算耗尽、费用未知或校验失败均不导入。
+6. 真实零件网格和完整 XYZ 姿态转换成工作台数据，保留原图、原始模型、来源信息及检查报告。每种零件网格只保存一份。
+
+小 / 中 / 大模型最多分别为 80 / 250 / 600 件。默认每任务预算 1 美元、最长 15 分钟，可通过 `.env` 调整。费用在模型响应后统计，最后一次调用可能略超预算；取消无法撤销已经产生的模型费用。
+
+生成窗口支持后台继续、任务取消、短暂断线重连和刷新后恢复查看。服务重启会将中断任务标为失败，避免留下假进度。通过校验的任务提供 LDraw、原始装配程序、预览和报告下载；浏览器作品仍保存在本地，原始任务文件由服务端记录目录保留。
+
+### API
+
+| 请求 | 用途 |
+| --- | --- |
+| `GET /api/generation/capabilities` | 模型、密钥及渲染依赖是否就绪，不返回密钥 |
+| `POST /api/generations` | 提交 `{image, prompt, size, style}`，返回任务 ID |
+| `GET /api/generations/{id}` | 轮询阶段、消息与完成后的 Project |
+| `DELETE /api/generations/{id}` | 取消任务并终止生成进程组 |
+| `GET /api/generations/{id}/artifacts/{name}` | 下载已完成任务的指定产物 |
+| `GET /api/parts` | 查询真实零件目录，支持 q / category / offset / limit |
+| `GET /api/parts/{id}` | 获取可放置、可保存的真实零件网格 |
+| `GET /api/ldraw/{path}` | 读取库内零件、基础图元及颜色文件 |
+| `GET /health` / `GET /ready` | 服务健康与生成能力状态 |
+
+### 验证与使用范围
+
+- BrickLayer 验证的是几何碰撞、悬空和连接，不是承重、摩擦、倾覆或完整装配顺序。逐块播放仍为层序示意。
+- 三维预览使用官方 SDK 随附的内缩碰撞网格，细节与完整 LDraw 外观略有差异；下载的 `.ldr` 保留原始零件引用。
+- 编辑后的本地重叠检查仍是包围盒近似，不等于重新执行 BrickLayer。修改后会标记“尚未重新校验”，并禁用原始模型 / 报告下载；还原原始模型后可再次下载。
+- 零件清单保留官方编号，但零件颜色组合、库存、价格与采购渠道未验证。
+- 这是仅限本机来源的开发服务，官方 agent 会执行其生成的 Python。公开部署前应将生成任务放入独立容器或等效隔离环境，并增加账号、任务归属及费用控制；不要把此本地入口直接暴露到公网。
+- `.env`、源照片和任务记录已加入忽略规则。删除 `.brick-it-records/` 会删除服务端任务与下载产物，不会删除浏览器中已经保存的作品。
+
+## 检查
+
+```sh
+npm run check
+npm test
+npm run test:backend
+npm run test:ui
+# 先启动 npm run dev，再针对真实 LDraw 库验证
+npm run test:catalog
+```
+
+浏览器测试需要 Python Playwright 与 Chromium；该测试自行启动临时静态服务，并通过明确的测试响应覆盖上传、进度、导入、保存、取消和失败，不会调用付费模型。后端测试使用真实 BrickLayer 零件与几何验证，并以测试进程验证任务管理。
+
+## 数据与模型
 
 `dist/data.js` 提供示例零件目录、作品数据和存储适配层。作品保存在当前浏览器的 IndexedDB 中；不可用时尝试 localStorage，不进行账号或云端同步。清理浏览器站点数据会删除本地作品。
 
-零件 ID 是项目内部的示例编号，不是官方零件编号。几何和连接件均为数字近似；目前进行网格吸附和基本实体重叠检查，真实连接点、吸附约束、可用颜色和完整可搭建性规则需要在提供零件数据库后接入。搭建顺序按从下到上的确定性顺序逐颗播放。
+原有 41 种编辑零件使用内部示例编号和简化几何；AI 生成模型使用真实 LDraw 编号、网格和姿态，并将其零件加入当前浏览器目录。两类零件在清单中保留各自身份。颜色仅表示视觉选择，不代表该零件颜色组合确实在售。搭建播放按从下到上的确定性顺序逐颗展示。
 
-AI 入口已提供图片 / 拍照与生成设置；当前不发送图片至 AI 服务，也不将示例模型伪装成生成结果。后续生成结果可转换为同一份 Project / Piece 数据供工作台、清单与收藏使用。
+`Project.parts` 保存生成模型引用的网格目录，`Project.generation` 保存任务来源和原始检查信息；这些字段与原图、完整 Piece 姿态、原始 baseline 一起持久化。生成服务没有账号同步功能。
 
 ## 主要文件
 
 - `dist/index.html` / `dist/style.css`：响应式页面与工作台布局。
-- `dist/app.js`：页面状态、生成入口、编辑、作品和导出流程。
+- `dist/app.js` / `dist/generation.js`：页面状态、生成任务、编辑、作品和导出流程。
+- `server/`：FastAPI 接口、任务进程、官方 SDK 适配、验收及坐标转换。
 - `dist/model.js`：Three.js 模型、拾取、放置、逐颗动画和图片渲染。
 - `dist/data.js`：示例目录、模型数据、重叠检查、本地作品存储。
 - `dist/ui-art.js`：积木相机、可着色凸点与四种方向的原生 SVG 图形。
@@ -52,7 +129,7 @@ AI 入口已提供图片 / 拍照与生成设置；当前不发送图片至 AI �
 
 进度条保留原生 range 输入，通过独立的完整模型透明 PNG 覆盖默认圆点。`model.js` 的 `progressThumbnail()` 输出 160 × 160 缩略图，排除底板、网格和选择状态，生成后恢复原场景；`app.js` 仅在打开或修改模型时刷新并缓存，播放与拖动期间不重复渲染小图。
 
-开源依赖的许可见 `dist/assets/licenses/`。本项目为独立创意数字工具，并非官方 LEGO 产品。
+开源前端依赖的许可见 `dist/assets/licenses/`。BrickWright 代码使用 MIT；BrickLayer 的 LDraw 数据涉及 CC BY 2.0 / 4.0，BrickNet 数据为 MIT，须保留官方 [NOTICE](https://github.com/AvaLovelace1/brickwright/blob/main/packages/bricklayer/NOTICE) 与相应归因。本项目为独立创意数字工具，并非官方 LEGO 产品。
 
 ## 本地 UI 素材
 

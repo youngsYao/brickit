@@ -1,7 +1,7 @@
 /**
  * brick.it's browser-local model and curated sample-part data.
- * Catalog IDs are internal identifiers, not official commercial part numbers.
- * Replace this catalog/adapter when the real parts database is connected.
+ * The built-in catalog contains samples. Generated projects carry their own
+ * official LDraw parts, including the exact mesh supplied by the build worker.
  */
 export const UNIT = 0.58;
 const BRICK_HEIGHT = 0.56;
@@ -52,7 +52,60 @@ export const CATALOG = Object.freeze([
   catalogPart('connector',1,2,'hinge',{h:PLATE_HEIGHT,name:'1 × 2 铰链连接件',description:'铰链的简化数字示例；转轴、活动范围及真实连接规则待数据库接入。'})
 ]);
 const catalogIndex = new Map(CATALOG.map(part => [part.id, part]));
-export function findPart(id) { return catalogIndex.get(String(id)); }
+const projectPartIndex = new Map();
+/** Sample parts plus the official parts registered from opened projects. */
+export function getCatalog() { return [...CATALOG, ...projectPartIndex.values()]; }
+export function findPart(id) { return projectPartIndex.get(String(id)) || catalogIndex.get(String(id)); }
+
+function validIdentifier(value) { return typeof value === 'string' && !!value.trim() && value.length <= 180; }
+function validateMeshPart(part) {
+  if (!part || !validIdentifier(part.id) || !validIdentifier(part.ldrawId) || catalogIndex.has(part.id)) throw new TypeError('生成零件缺少有效的 LDraw 编号，或与示例零件冲突。');
+  if (typeof part.name !== 'string' || !part.name.trim() || part.shape !== 'mesh' || !['w','d','h'].every(key => Number.isFinite(part[key]) && part[key] > 0 && part[key] <= 10000)) throw new TypeError(`零件 ${part.id} 的名称、尺寸或形状无效。`);
+  if (!Array.isArray(part.colors) || !part.colors.length || part.colors.some(color => typeof color !== 'string' || !/^#[0-9a-f]{6}$/i.test(color))) throw new TypeError(`零件 ${part.id} 的颜色数据无效。`);
+  const positions = part.mesh?.positions, indices = part.mesh?.indices;
+  if (!Array.isArray(positions) || positions.length < 9 || positions.length % 3 || positions.length > 9000000 || positions.some(value => !Number.isFinite(value) || Math.abs(value) > 10000)) throw new TypeError(`零件 ${part.id} 的三维网格顶点无效。`);
+  if (!Array.isArray(indices) || !indices.length || indices.length % 3 || indices.length > 9000000 || indices.some(index => !Number.isInteger(index) || index < 0 || index >= positions.length / 3)) throw new TypeError(`零件 ${part.id} 的三维网格面无效。`);
+  const low = [Infinity,Infinity,Infinity], high = [-Infinity,-Infinity,-Infinity];
+  for (let index=0;index<positions.length;index++) {
+    const axis=index%3;low[axis]=Math.min(low[axis],positions[index]);high[axis]=Math.max(high[axis],positions[index]);
+  }
+  for (const [axis,extent] of [part.w*UNIT,part.h,part.d*UNIT].entries()) {
+    const tolerance=Math.max(1e-5,extent*1e-5);
+    if (Math.abs(high[axis]-low[axis]-extent)>tolerance || Math.abs(high[axis]+low[axis])>tolerance) throw new TypeError(`零件 ${part.id} 的网格范围与尺寸不一致。`);
+  }
+}
+
+/** Validate before registering anything: a failed import leaves the catalog intact.
+ * Meshes stay in the worker's centered, Y-up UI coordinates. No box substitution,
+ * re-centering, scaling, color availability claim, or physics certification occurs.
+ */
+export function registerProjectParts(project) {
+  if (!project || typeof project !== 'object') throw new TypeError('作品数据无效。');
+  if (project.parts !== undefined && !Array.isArray(project.parts)) throw new TypeError('作品零件目录必须是数组。');
+  const incoming = project.parts || [], seen = new Set();
+  for (const part of incoming) {
+    validateMeshPart(part);
+    if (seen.has(part.id)) throw new TypeError(`作品包含重复的零件编号：${part.id}`);
+    seen.add(part.id);
+  }
+  for (const pieces of [project.pieces, project.originalPieces ?? undefined]) {
+    if (pieces === undefined) continue;
+    if (!Array.isArray(pieces)) throw new TypeError('作品积木数据必须是数组。');
+    for (const piece of pieces) {
+      if (!hasValidGeometry(piece)) throw new TypeError('作品包含无效的位置、旋转或尺寸。');
+      if ((piece.shape === 'mesh' || piece.ldrawId || String(piece.partId || '').startsWith('ldraw-')) && !seen.has(piece.partId)) throw new TypeError(`作品缺少零件 ${piece.partId || piece.ldrawId} 的原始网格。`);
+    }
+  }
+  const registered = incoming.map(part => {
+    const copy = cloneProject(part);
+    copy.categoryName ||= categoryNames[copy.category] || '官方零件';
+    copy.colors = Object.freeze(copy.colors);
+    copy.mesh = Object.freeze({ ...copy.mesh, positions: Object.freeze(copy.mesh.positions), indices: Object.freeze(copy.mesh.indices) });
+    return Object.freeze(copy);
+  });
+  for (const part of registered) projectPartIndex.set(part.id, part);
+  return registered;
+}
 
 function uniqueId(prefix = 'piece') {
   if (globalThis.crypto?.randomUUID) return `${prefix}-${globalThis.crypto.randomUUID()}`;
@@ -66,7 +119,9 @@ function normalizeColor(color, fallback = COLOR_OPTIONS[0].hex) {
   return fallback;
 }
 function canonicalPartId(piece) {
-  if (piece.partId && findPart(piece.partId)) return piece.partId;
+  // Official identities survive opening, editing and inventory export unchanged.
+  if (validIdentifier(piece.partId)) return piece.partId;
+  if (validIdentifier(piece.ldrawId)) return `ldraw-${piece.ldrawId}`;
   const [w,d] = [numberOr(piece.w,1),numberOr(piece.d,1)].sort((a,b)=>a-b);
   const category = piece.shape || (piece.type === 'leaf' || piece.h < 0.3 ? 'plate' : 'brick');
   const exact = `${category}-${w}x${d}`;
@@ -140,14 +195,15 @@ export async function resolveOriginalPieces(project, getProject = id => library.
 export function createPiece(partOrId, color, position = {}) {
   position = position && typeof position === 'object' ? position : {};
   const part=typeof partOrId==='string'?findPart(partOrId):partOrId;
-  if(!part||!Number.isFinite(part.w)||!Number.isFinite(part.d)||!Number.isFinite(part.h)) throw new TypeError('请选择有效的示例零件。');
+  if(!part||!Number.isFinite(part.w)||!Number.isFinite(part.d)||!Number.isFinite(part.h)) throw new TypeError('请选择有效的零件。');
   const y=numberOr(position.y,part.h/2);
   return {
-    id:uniqueId(),partId:part.id,w:part.w,d:part.d,h:part.h,
+    ...position,id:uniqueId(),partId:part.id,w:part.w,d:part.d,h:part.h,
+    ...(part.ldrawId ? { ldrawId: part.ldrawId } : {}),
     shape:part.shape||'brick',type:position.type||'body',
     layer:Math.max(1,Math.floor((y-part.h/2+0.02)/BRICK_HEIGHT)+1),
     x:numberOr(position.x,0),y,z:numberOr(position.z,0),
-    ry:numberOr(position.ry,0),rz:numberOr(position.rz,0),
+    rx:numberOr(position.rx,0),ry:numberOr(position.ry,0),rz:numberOr(position.rz,0),
     color:normalizeColor(color,part.colors?.[0]||COLOR_OPTIONS[0].hex)
   };
 }
@@ -157,16 +213,17 @@ export function inventoryFor(pieces = []) {
   const rows=new Map();
   for(const piece of pieces) {
     const partId=canonicalPartId(piece),part=findPart(partId);
-    const [w,d]=[numberOr(piece.w,1),numberOr(piece.d,1)].sort((a,b)=>a-b);
+    const ldrawId=piece.ldrawId||part?.ldrawId;
+    const [w,d]=ldrawId?[numberOr(piece.w,1),numberOr(piece.d,1)]:[numberOr(piece.w,1),numberOr(piece.d,1)].sort((a,b)=>a-b);
     const h=numberOr(piece.h,BRICK_HEIGHT),color=normalizeColor(piece.color);
     const shape=piece.shape||part?.shape||'brick';
-    const key=[partId,w,d,h.toFixed(4),shape,color].join('|');
+    const key=ldrawId?[partId,color,piece.colorCode??''].join('|'):[partId,w,d,h.toFixed(4),shape,color].join('|');
     if(!rows.has(key)) {
       rows.set(key,{
-        partId,name:part?.name||`${w} × ${d} ${categoryNames[shape]||'积木'}`,
+        partId,...(ldrawId?{ldrawId,colorCode:piece.colorCode}:{}),name:part?.name||piece.name||(ldrawId?`LDraw ${ldrawId}`:`${w} × ${d} ${categoryNames[shape]||'积木'}`),
         color,colorName:COLOR_OPTIONS.find(option=>option.hex===color)?.name||color,
         w,d,h,shape,category:part?.category||shape,count:0,
-        sampleHeight:!!part&&Math.abs(h-part.h)>0.015
+        sampleHeight:!ldrawId&&!!part&&Math.abs(h-part.h)>0.015
       });
     }
     rows.get(key).count++;
@@ -180,7 +237,12 @@ export function inventoryFor(pieces = []) {
 
 /** Bottom-up playback order. IDs and the input objects are never rewritten. */
 export function orderPieces(pieces = []) {
-  return pieces.map((piece,index)=>({piece,index,bottom:numberOr(piece.y,0)-numberOr(piece.h,BRICK_HEIGHT)/2}))
+  return pieces.map((piece,index)=>{
+    const official=piece.ldrawId||findPart(piece.partId)?.mesh;
+    const box=official?orientedBox(piece):null;
+    const reach=box?box.half.reduce((sum,half,i)=>sum+half*Math.abs(box.axes[i][1]),0):numberOr(piece.h,BRICK_HEIGHT)/2;
+    return {piece,index,bottom:numberOr(piece.y,0)-reach};
+  })
     .sort((a,b)=>a.bottom-b.bottom||numberOr(a.piece.y,0)-numberOr(b.piece.y,0)||
       numberOr(a.piece.z,0)-numberOr(b.piece.z,0)||numberOr(a.piece.x,0)-numberOr(b.piece.x,0)||a.index-b.index)
     .map(({piece})=>({...piece}));
@@ -189,11 +251,11 @@ export function orderPieces(pieces = []) {
 function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2]}
 function cross(a,b){return [a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
 function orientedBox(piece) {
-  const cy=Math.cos(piece.ry||0),sy=Math.sin(piece.ry||0),cz=Math.cos(piece.rz||0),sz=Math.sin(piece.rz||0);
+  const cx=Math.cos(piece.rx||0),sx=Math.sin(piece.rx||0),cy=Math.cos(piece.ry||0),sy=Math.sin(piece.ry||0),cz=Math.cos(piece.rz||0),sz=Math.sin(piece.rz||0);
   return {
     center:[piece.x,piece.y,piece.z],
-    // Matches THREE.Euler's default XYZ order with x = 0.
-    axes:[[cy*cz,sz,-sy*cz],[-cy*sz,cz,sy*sz],[sy,0,cy]],
+    // Columns of THREE.Euler's XYZ rotation matrix; all axes may be rotated.
+    axes:[[cy*cz,sx*sy*cz+cx*sz,-cx*sy*cz+sx*sz],[-cy*sz,-sx*sy*sz+cx*cz,cx*sy*sz+sx*cz],[sy,-sx*cy,cx*cy]],
     half:[Math.max(0.001,piece.w*UNIT/2-0.012),Math.max(0.001,piece.h/2-0.012),Math.max(0.001,piece.d*UNIT/2-0.012)]
   };
 }
@@ -213,10 +275,10 @@ function boxesOverlap(a,b) {
 }
 function hasValidGeometry(piece) {
   return piece&&['x','y','z','w','d','h'].every(key=>Number.isFinite(piece[key]))&&
-    piece.w>0&&piece.d>0&&piece.h>0&&piece.w<=32&&piece.d<=32&&piece.h<=20&&
-    (piece.ry===undefined||Number.isFinite(piece.ry))&&(piece.rz===undefined||Number.isFinite(piece.rz));
+    piece.w>0&&piece.d>0&&piece.h>0&&piece.w<=10000&&piece.d<=10000&&piece.h<=10000&&
+    ['rx','ry','rz'].every(key=>piece[key]===undefined||Number.isFinite(piece[key]));
 }
-/** Basic geometric overlap check; real connection/strength rules await the parts DB. */
+/** Editing aid only: oriented bounding boxes, not BrickLayer mesh/connection checks. */
 export function canPlace(pieces = [],candidate,ignoreId) {
   if(!hasValidGeometry(candidate))return {ok:false,reason:'积木尺寸或位置无效，请重新选择零件。'};
   if(Math.abs(candidate.x)>58||Math.abs(candidate.z)>58||candidate.y>50)return {ok:false,reason:'当前位置超出工作台范围，请靠近模型放置。'};
@@ -225,7 +287,7 @@ export function canPlace(pieces = [],candidate,ignoreId) {
   if(minY < -0.035)return {ok:false,reason:'积木不能穿过基板，请将它向上移动。'};
   // Recoloring an existing sample part must not invalidate original stylized joins.
   const current=pieces.find(piece=>String(piece.id)===String(ignoreId??candidate.id));
-  const sameGeometry=current&&['x','y','z','w','d','h','ry','rz'].every(key=>Math.abs(numberOr(current[key],0)-numberOr(candidate[key],0))<1e-7);
+  const sameGeometry=current&&['x','y','z','w','d','h','rx','ry','rz'].every(key=>Math.abs(numberOr(current[key],0)-numberOr(candidate[key],0))<1e-7);
   if(sameGeometry)return {ok:true,reason:''};
   for(const piece of pieces) {
     if(ignoreId!==undefined&&String(piece.id)===String(ignoreId))continue;
@@ -305,22 +367,24 @@ function prepareProject(project) {
   if(copy.pieces.some(piece=>!hasValidGeometry(piece)))throw new TypeError('模型中有无效的积木数据，请检查后再保存。');
   const seen=new Set();
   for(const piece of copy.pieces){if(piece.id===undefined||seen.has(String(piece.id)))throw new TypeError('模型中有重复或缺失的积木编号，请检查后再保存。');seen.add(String(piece.id))}
+  registerProjectParts(copy);
   const now=new Date().toISOString();
   copy.title=String(copy.title||'未命名作品').trim().slice(0,100)||'未命名作品';
   copy.createdAt=copy.createdAt||now;copy.updatedAt=copy.updatedAt||now;
   copy.favorite=!!copy.favorite;copy.version=Math.max(1,Math.floor(numberOr(copy.version,1)));
-  copy.source=copy.source==='example'?'example':'user';copy.sourceImage=copy.sourceImage||null;
+  copy.source=typeof copy.source==='string'&&copy.source?copy.source:'user';copy.sourceImage=copy.sourceImage||null;
   copy.settings={size:'medium',style:'classic',...copy.settings};
   return copy;
 }
 export const library = {
   /** Storage is local to this browser, never an account/cloud synchronization. */
   get backend(){return activeBackend},
-  async list(){return sortedProjects(await withFallback('readonly',store=>store.getAll(),()=>fallbackRecords()))},
+  async list(){const projects=sortedProjects(await withFallback('readonly',store=>store.getAll(),()=>fallbackRecords()));for(const project of projects)registerProjectParts(project);return projects},
   async get(id){
     const key=String(id);
     const project=await withFallback('readonly',store=>store.get(key),()=>fallbackRecords().find(item=>item.id===key));
-    return project?cloneProject(project):null;
+    if(!project)return null;
+    const copy=cloneProject(project);registerProjectParts(copy);return copy;
   },
   async put(project){
     const copy=prepareProject(project);

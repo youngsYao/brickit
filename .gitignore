@@ -8,3 +8,17 @@ node_modules/
 outputs/*.png
 outputs/*.jpg
 outputs/*.webp
+
+# Local generation runtime, secrets, and uploaded photos
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.brickit/
+records/
+
+.brick-it-records/
+output/playwright/

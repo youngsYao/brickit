@@ -16,6 +16,20 @@ const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(
 const clamp = THREE.MathUtils.clamp;
 const sameId = (a, b) => a !== null && b !== null && String(a) === String(b);
 
+/** The worker already supplies centered mesh vertices in the scene's units.
+ * Preserve the real part silhouette, cavities and connectors without scaling
+ * to its bounding box or adding the demo catalog's decorative studs.
+ */
+export function createPartMeshGeometry(part) {
+  if (!part?.mesh?.positions || !part?.mesh?.indices) throw new TypeError('生成零件缺少原始三维网格。');
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(part.mesh.positions, 3));
+  geometry.setIndex(part.mesh.indices);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox(); geometry.computeBoundingSphere();
+  return geometry;
+}
+
 /** A scene adapter. Project mutations always remain the caller's responsibility. */
 export async function createModel(container, options = {}) {
   const { onSelect, onPlace, onReady, onError } = options;
@@ -95,7 +109,8 @@ export async function createModel(container, options = {}) {
   const grid = new THREE.Mesh(keep(new THREE.PlaneGeometry(18, 15)), keep(new THREE.MeshBasicMaterial({ map: gridTexture, transparent: true, opacity: .3, depthWrite: false })));
   grid.rotation.x = -Math.PI / 2; grid.position.y = -.14; scene.add(grid);
 
-  const geometryCache = new Map(), materialCache = new Map();
+  const geometryCache = new Map(), materialCache = new Map(), meshVersions = new WeakMap();
+  let nextMeshVersion = 0;
   const studPoints = [new THREE.Vector2(0, -.026), new THREE.Vector2(.162, -.026), new THREE.Vector2(.174, -.018), new THREE.Vector2(.174, .043), new THREE.Vector2(.166, .054), new THREE.Vector2(0, .054)];
   const studGeometry = new THREE.LatheGeometry(studPoints, 20);
   const materialFor = color => {
@@ -106,7 +121,17 @@ export async function createModel(container, options = {}) {
   const asNonIndexed = geometry => { if (!geometry.index) return geometry; const expanded = geometry.toNonIndexed(); geometry.dispose(); return expanded; };
   function geometryFor(spec) {
     const part = findPart(spec.partId || spec.id);
+    const meshPart = part?.mesh ? part : spec.mesh ? spec : null;
+    if (meshPart) {
+      // Two projects may carry the same LDraw id with different mesh revisions.
+      // Object identity prevents an old cached shape from replacing a new one.
+      if (!meshVersions.has(meshPart.mesh)) meshVersions.set(meshPart.mesh, ++nextMeshVersion);
+      const cacheKey = `mesh:${meshPart.id}:${meshVersions.get(meshPart.mesh)}`;
+      if (!geometryCache.has(cacheKey)) geometryCache.set(cacheKey, createPartMeshGeometry(meshPart));
+      return { geometry: geometryCache.get(cacheKey), key: cacheKey };
+    }
     const shape = spec.shape || part?.shape || (spec.h < .3 ? 'plate' : 'brick');
+    if (shape === 'mesh') throw new TypeError(`零件 ${spec.partId || spec.id} 的三维网格尚未加载。`);
     const w = Math.max(1, finite(spec.w, part?.w || 1)), d = Math.max(1, finite(spec.d, part?.d || 1));
     const h = Math.max(.08, finite(spec.h, part?.h || .56));
     const hasStuds = spec.studs ?? part?.studs ?? !['tile', 'beam', 'connector'].includes(shape);
@@ -249,7 +274,7 @@ export async function createModel(container, options = {}) {
       x: clamp(snap(hitPoint.x, width), -8 * U, 8 * U),
       y: Math.max(0, surfaceY) + part.h / 2,
       z: clamp(snap(hitPoint.z, depth), -8 * U, 8 * U),
-      ry: rotation, rz: 0
+      rx: 0, ry: rotation, rz: 0
     };
     const candidate = { ...part, ...proposal, partId: part.id, id: '__placement__', color: placement.color, type: 'body' };
     let validation;
@@ -434,13 +459,13 @@ export async function createModel(container, options = {}) {
   const api = {
     loadPieces(nextPieces = []) {
       if (disposed) return;
-      pieces = nextPieces.map((piece, i) => ({ ...piece, id: piece.id ?? `piece-${i}`, w: Math.max(1, finite(piece.w, 1)), d: Math.max(1, finite(piece.d, 1)), h: Math.max(.08, finite(piece.h, .56)), x: finite(piece.x), y: finite(piece.y), z: finite(piece.z), ry: finite(piece.ry), rz: finite(piece.rz), layer: finite(piece.layer, 1) }));
+      pieces = nextPieces.map((piece, i) => ({ ...piece, id: piece.id ?? `piece-${i}`, w: Math.max(.001, finite(piece.w, 1)), d: Math.max(.001, finite(piece.d, 1)), h: Math.max(.001, finite(piece.h, .56)), x: finite(piece.x), y: finite(piece.y), z: finite(piece.z), rx: finite(piece.rx), ry: finite(piece.ry), rz: finite(piece.rz), layer: finite(piece.layer, 1) }));
       modelGroup.clear(); records = [];
       for (const spec of pieces) {
         const { geometry, key } = geometryFor(spec);
         const defaultColor = spec.type === 'leaf' ? '#648a35' : spec.type === 'stem' ? '#76502f' : PALETTES.red.color;
         const mesh = new THREE.Mesh(geometry, materialFor(spec.color || defaultColor)); mesh.castShadow = true; mesh.receiveShadow = true; mesh.userData.id = spec.id;
-        mesh.position.set(spec.x, spec.y, spec.z); mesh.rotation.set(0, spec.ry, spec.rz); modelGroup.add(mesh);
+        mesh.position.set(spec.x, spec.y, spec.z); mesh.rotation.set(spec.rx, spec.ry, spec.rz, 'XYZ'); modelGroup.add(mesh);
         records.push({ spec, mesh, base: new THREE.Vector3(spec.x, spec.y, spec.z), geometryKey: key });
       }
       progress = records.length;
