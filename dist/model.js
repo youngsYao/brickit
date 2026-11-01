@@ -369,6 +369,68 @@ export async function createModel(container, options = {}) {
     return output;
   }
 
+  // A complete-model silhouette for the assembly slider, independent of the
+  // visible step and camera. Reuse the renderer, but leave interaction state alone.
+  function renderProgressThumbnail() {
+    if (disposed || contextLost || !records.length) return null;
+    const size = 160;
+    const output = document.createElement('canvas'); output.width = output.height = size;
+    const context = output.getContext('2d');
+    if (!context) return null;
+    const oldSize = renderer.getSize(new THREE.Vector2()), oldRatio = renderer.getPixelRatio();
+    const oldClearColor = renderer.getClearColor(new THREE.Color()), oldClearAlpha = renderer.getClearAlpha();
+    const oldTarget = renderer.getRenderTarget(), oldViewport = renderer.getViewport(new THREE.Vector4());
+    const oldScissor = renderer.getScissor(new THREE.Vector4()), oldScissorTest = renderer.getScissorTest();
+    const oldBackground = scene.background, oldNeedsFrame = needsFrame;
+    const childStates = scene.children.map(object => ({ object, visible: object.visible }));
+    const recordStates = records.map(rec => ({ mesh: rec.mesh, visible: rec.mesh.visible, position: rec.mesh.position.clone() }));
+    try {
+      // Lights and the model remain; the base, ground, grid, selection, and ghost
+      // are all scene siblings and must not become part of the small model icon.
+      for (const object of scene.children) object.visible = object === modelGroup || !!object.isLight;
+      for (const rec of records) { rec.mesh.visible = true; rec.mesh.position.copy(rec.base); }
+      scene.background = null; modelGroup.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(modelGroup);
+      const center = bounds.getCenter(new THREE.Vector3()), extent = bounds.getSize(new THREE.Vector3());
+      const distance = Math.max(20, extent.length() * 2);
+      const thumbnailCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, distance + extent.length() + 10);
+      thumbnailCamera.position.set(center.x + Math.sin(-.53) * Math.cos(.4) * distance, center.y + Math.sin(.4) * distance, center.z + Math.cos(-.53) * Math.cos(.4) * distance);
+      thumbnailCamera.lookAt(center); thumbnailCamera.updateMatrixWorld(true);
+
+      // Fit the projected bounds of each brick rather than the whole model's
+      // world box, so angled leaves and off-center additions remain well framed.
+      const viewBounds = new THREE.Box3(), point = new THREE.Vector3();
+      for (const rec of records) {
+        const local = rec.mesh.geometry.boundingBox;
+        for (const x of [local.min.x, local.max.x]) for (const y of [local.min.y, local.max.y]) for (const z of [local.min.z, local.max.z]) {
+          point.set(x, y, z).applyMatrix4(rec.mesh.matrixWorld).applyMatrix4(thumbnailCamera.matrixWorldInverse);
+          viewBounds.expandByPoint(point);
+        }
+      }
+      const viewCenter = viewBounds.getCenter(new THREE.Vector3());
+      const offset = new THREE.Vector3(viewCenter.x, viewCenter.y, 0).applyQuaternion(thumbnailCamera.quaternion);
+      thumbnailCamera.position.add(offset);
+      const halfFrame = Math.max(viewBounds.max.x - viewBounds.min.x, viewBounds.max.y - viewBounds.min.y, .1) / (2 * .80);
+      thumbnailCamera.left = -halfFrame; thumbnailCamera.right = halfFrame;
+      thumbnailCamera.top = halfFrame; thumbnailCamera.bottom = -halfFrame;
+      thumbnailCamera.updateProjectionMatrix(); thumbnailCamera.updateMatrixWorld(true);
+
+      renderer.setRenderTarget(null); renderer.setPixelRatio(1); renderer.setSize(size, size, false);
+      renderer.setScissorTest(false); renderer.setClearColor(0x000000, 0);
+      renderer.render(scene, thumbnailCamera); context.drawImage(renderer.domElement, 0, 0, size, size);
+      return output.toDataURL('image/png');
+    } finally {
+      for (const { mesh, visible, position } of recordStates) { mesh.visible = visible; mesh.position.copy(position); }
+      for (const { object, visible } of childStates) object.visible = visible;
+      scene.background = oldBackground; modelGroup.updateMatrixWorld(true);
+      renderer.setClearColor(oldClearColor, oldClearAlpha);
+      renderer.setPixelRatio(oldRatio); renderer.setSize(oldSize.x, oldSize.y, false);
+      renderer.setRenderTarget(oldTarget); renderer.setViewport(oldViewport); renderer.setScissor(oldScissor); renderer.setScissorTest(oldScissorTest);
+      if (!disposed && !contextLost) renderer.render(scene, camera);
+      needsFrame = oldNeedsFrame;
+    }
+  }
+
   const api = {
     loadPieces(nextPieces = []) {
       if (disposed) return;
@@ -421,6 +483,7 @@ export async function createModel(container, options = {}) {
     resetView() { targetTheta = -.53; targetPhi = .4; targetZoom = exploded ? .76 : 1; needsFrame = true; },
     async snapshot(exportOptions = {}) { const canvas = renderExport(1800, { ...exportOptions, poster: true }); return new Promise(resolve => canvas.toBlob(resolve, 'image/png')); },
     async thumbnail() { return renderExport(480, { poster: false }).toDataURL('image/jpeg', .84); },
+    async progressThumbnail() { return renderProgressThumbnail(); },
     dispose() {
       if (disposed) return; disposed = true; cancelAnimationFrame(raf); ro.disconnect();
       container.removeEventListener('pointerdown', onPointerDown); container.removeEventListener('pointermove', onPointerMove); container.removeEventListener('pointerup', onPointerUp); container.removeEventListener('pointercancel', onCancel); container.removeEventListener('pointerleave', onLeave); container.removeEventListener('wheel', onWheel);

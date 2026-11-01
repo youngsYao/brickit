@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 82" role="img" aria-labelledby="brand-mark-title">
+  <title id="brand-mark-title">brick.it 红色六凸点积木</title>
+  <defs>
+    <linearGradient id="brick-top" x1="21" y1="13" x2="65" y2="49" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff7665"/>
+      <stop offset="1" stop-color="#ef3628"/>
+    </linearGradient>
+    <linearGradient id="brick-left" x1="7" y1="36" x2="42" y2="75" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#f13a2b"/>
+      <stop offset="1" stop-color="#d72217"/>
+    </linearGradient>
+    <linearGradient id="brick-right" x1="67" y1="35" x2="57" y2="76" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ce281c"/>
+      <stop offset="1" stop-color="#a71911"/>
+    </linearGradient>
+    <linearGradient id="stud-side" x1="0" y1="-5" x2="0" y2="4" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#e93829"/>
+      <stop offset="1" stop-color="#cd261b"/>
+    </linearGradient>
+    <linearGradient id="stud-top" x1="-5" y1="-8" x2="5" y2="-2" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ff8b79"/>
+      <stop offset="1" stop-color="#fa5848"/>
+    </linearGradient>
+    <g id="stud">
+      <path d="M-7.2-5V0a7.2 3.8 0 0 0 14.4 0v-5Z" fill="url(#stud-side)"/>
+      <ellipse cy="-5" rx="7.2" ry="3.8" fill="url(#stud-top)"/>
+      <path d="M-5.7-6.2a7.2 3.8 0 0 1 9.5-1.2" fill="none" stroke="#ffb0a0" stroke-width=".55" stroke-linecap="round" opacity=".7"/>
+    </g>
+  </defs>
+  <path d="M7 31 40 48.5V77L8.4 60a2.7 2.7 0 0 1-1.4-2.4Z" fill="url(#brick-left)"/>
+  <path d="m40 48.5 49-24V52a2.8 2.8 0 0 1-1.6 2.5L40 77Z" fill="url(#brick-right)"/>
+  <path d="M8.2 30.4 54.8 7.8a2.8 2.8 0 0 1 2.5 0l30.5 15.5c1.5.8 1.5 1.7 0 2.4L41.3 48.4a3 3 0 0 1-2.6 0L8.2 32.8c-1.6-.8-1.6-1.6 0-2.4Z" fill="url(#brick-top)"/>
+  <path d="m8.5 32.7 30.3 15.5a3 3 0 0 0 2.5 0L87.8 25.5" fill="none" stroke="#ff8a74" stroke-width=".7" stroke-linecap="round" opacity=".7"/>
+  <use href="#stud" transform="translate(56.1 16.1)"/>
+  <use href="#stud" transform="translate(39.8 23.8)"/>
+  <use href="#stud" transform="translate(72.6 24.6)"/>
+  <use href="#stud" transform="translate(23.4 31.4)"/>
+  <use href="#stud" transform="translate(56.3 32.3)"/>
+  <use href="#stud" transform="translate(39.9 39.9)"/>
+</svg>
