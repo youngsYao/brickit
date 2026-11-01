@@ -1,0 +1,15 @@
+brick.it 上传区信纸背景
+执行方式：内置 ImageGen
+参考：用户提供的信纸底板图片（含右下角角标）
+输出：dist/assets/upload-stationery.png
+要求：重新生成，移除角标，与系统暖白和浅灰绿色调融合，外围透明。
+
+Use case: precise-object-edit.
+Asset type: production website upload-area stationery background.
+Input image 1 is the EDIT TARGET / layout reference: the supplied blank ivory LEGO-style stationery board.
+Primary request: regenerate this stationery board with absolutely NO watermark or sparkle in the bottom-right, and recolor it to blend with the brick.it app's warm off-white and muted sage interface.
+Keep the same design idea: a single softly rounded rectangular sheet/plate, evenly spaced tiny circular LEGO-like studs along all four outer edges, a single subtle dashed rounded rectangle inset within the stud border, and a large completely BLANK center for live HTML upload controls.
+Palette: the app page is #f7f6f2; plate surface should be very close to #f7f6f2 and #fcfbf7 with a restrained pale sage-gray hint #e7e9df on the stud edges. Dashed line #c6ceba. Soft shadows tinted muted olive-gray #77816b at very low opacity. Avoid cool gray, metallic silver, orange/yellow cast, and dark or dramatic shading.
+Materials: clean matte paper / lightly textured ABS plastic, extremely subtle natural surface texture. Quiet, even illumination; nearly uniform color across the empty center. Delicate 3D stud relief rather than strong product-render contrast. Thin soft outer shadow.
+Composition: a wide landscape board about 1.8:1, viewed straight on with NO perspective. Tight framing, the plate fills nearly the entire image, only a small even transparent margin (about 1–2%). Corners softly rounded, studs perfectly round and evenly sized. Transparent outside the rounded plate, but the entire plate and its blank center are OPAQUE warm white.
+Constraints: completely remove the original bottom-right watermark and do not replace it with any symbol. No watermark anywhere, no star, no sparkle, no logo, no text, no numbers, no camera or other object, no UI controls. No extra borders, no extra dashed rectangles. Deliver only the reusable clean background.

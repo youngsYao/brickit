@@ -4,3 +4,7 @@ node_modules/
 *.tgz
 *.tar.gz
 .DS_Store
+.playwright-mcp/
+outputs/*.png
+outputs/*.jpg
+outputs/*.webp

@@ -1,0 +1,23 @@
+brick.it 品牌素材拆分
+执行方式：内置 ImageGen
+输入：用户提供的 brick.it 组合标记
+输出：dist/assets/brand-brick.png、dist/assets/brand-lettering.png
+
+brickBrandMark
+Use case: background-extraction.
+Asset type: independently placeable website brand icon.
+Input image 1 is the EDIT TARGET: the supplied brick.it logo.
+Primary request: extract ONLY the large red six-stud brick from the far left of the supplied image as a standalone image on a genuinely transparent background.
+Preserve the original exact red rectangular 2-by-3-stud brick, its isometric camera angle, proportions, all SIX circular studs, smooth plastic surfaces, bright red top, darker red side faces, highlights, and clean silhouette. Remove ALL of the brick.it lettering and ALL other shapes, edge debris, and background pixels.
+Composition: one brick centered, tightly framed to its visible silhouette with a small uniform transparent margin (about 2–3%). No large empty margins, no ground, no cast shadow outside the brick. Keep the existing orientation.
+Constraints: extract the existing design; do not redesign, add studs, rotate the camera, add text, or add objects. Preserve transparency. Output only the standalone red brick icon.
+
+brickBrandLettering
+Use case: background-extraction.
+Asset type: independently placeable horizontal website wordmark.
+Input image 1 is the EDIT TARGET: the supplied brick.it logo.
+Primary request: extract ONLY the lettering "brick.it" from the right-hand portion of the image as a single standalone wordmark on a genuinely transparent background. Completely remove the large red six-stud brick on the far left.
+Text (verbatim): "brick.it".
+Preserve exactly the recognizable design of each original letter: the dark charcoal-blue b, r, i, c, k built out of dimensional bricks, the floating studded dot over the i, then the small red period and solid bright-red i and t. Keep the existing letter spacing, shape, color, lighting and 3D perspective. Do not replace it with a typed font.
+Composition: only the horizontal wordmark on one line, tightly framed to its visible silhouette with about 2–3% uniform transparent margin. A wide strip approximately 3.2:1 aspect ratio. No oversized blank margins or empty icon space on the left.
+Constraints: preserve the exact spelling and original lettering design; do not add another icon or brick, do not add any caption, do not recolor, do not change the camera angle. Remove stray semi-transparent background debris. Output only the standalone lettering.
