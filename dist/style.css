@@ -88,3 +88,12 @@
 @media(max-width:1000px) and (min-width:761px){.source-input-wrap{padding:26px}.swatch-row{gap:6px}.swatch.brick-swatch{min-height:30px}.stud-icon{width:32px;height:32px}.rotation-options{gap:4px}.rotation-choice{min-height:60px}.direction-model{height:30px}}
 @media(max-width:760px){.source-input-wrap{padding:28px}.source-preview{min-height:130px;padding:8px 0 13px}.upload-prompt{display:grid;grid-template-columns:64px minmax(0,1fr);column-gap:10px;row-gap:5px;align-content:center;min-height:109px;text-align:left}.upload-camera,.upload-camera-placeholder{grid-column:1;grid-row:1/4;width:64px;height:59px;margin:0}.upload-prompt>strong,.upload-prompt>span,.upload-prompt>small{grid-column:2}.upload-prompt>strong{font-size:13px}.upload-prompt>span{font-size:10px}.upload-prompt>small{font-size:9px}.source-input-actions{gap:8px;padding:2px 0 9px}.source-input-actions .button{min-height:40px;padding:9px 12px}.swatch-row{gap:9px;grid-template-columns:repeat(5,minmax(0,1fr))}.swatch.brick-swatch{min-height:44px}.stud-icon{width:42px;height:42px}.rotation-choice{min-height:74px}.direction-model{height:41px}.rotation-choice>span{font-size:11px}}
 @media(max-width:360px){.source-input-wrap{padding:25px}.upload-prompt{grid-template-columns:52px minmax(0,1fr);column-gap:7px}.upload-camera,.upload-camera-placeholder{width:52px;height:50px}.source-input-actions{gap:6px}.source-input-actions .button{font-size:10px;padding:8px 9px}.swatch-row{gap:7px}}
+
+/* Shared brick artwork for search, saved files, and starting a creation. */
+.icon.brick-ui-icon{object-fit:contain;flex-shrink:0}
+.search-field>.brick-ui-icon{width:25px;height:25px;opacity:1}
+.header-new>.brick-ui-icon{width:24px;height:24px}
+.nav-link>.brick-ui-icon{width:20px;height:20px;opacity:1}
+.recent-empty>.brick-ui-icon{width:24px;height:24px}
+.empty-symbol>.brick-ui-icon{width:42px;height:42px}
+@media(max-width:760px){.header-new>.brick-ui-icon{width:23px;height:23px}.nav-link>.brick-ui-icon{width:19px;height:19px}}

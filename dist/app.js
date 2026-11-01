@@ -4,7 +4,10 @@ import { cameraIllustration, colorSwatch, rotationChoices } from './ui-art.js';
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const esc = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-const icon = name => `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+const brickIcons = {'magnifying-glass':'search','folder-open':'folder','paint-brush':'brush'};
+const icon = name => brickIcons[name]
+  ? `<img class="icon brick-ui-icon" src="./assets/brick-${brickIcons[name]}.svg" alt="" aria-hidden="true" width="24" height="24">`
+  : `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`;
 const uid = () => `project-${globalThis.crypto?.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2)}`;
 const categoryName = value => ({brick:'标准砖',plate:'薄板',tile:'光面板',slope:'斜坡与弧面',round:'圆形零件',technic:'科技零件',beam:'科技梁',connector:'连接件',decorative:'装饰零件',arch:'拱形零件'}[value] || value);
 const state = {page:'create',project:null,mode:'build',progress:0,playing:false,speed:300,selectedId:null,placementPart:null,placementColor:'#b91620',placementRotation:0,rotating:false,exploded:false,miniSearch:'',catalogSearch:'',catalogCategory:'all',catalogColor:'all',worksSearch:'',worksFilter:'all',projects:[],undo:[],redo:[],referenceImage:null,referenceName:'',camera:null,placementValid:true,initialized:false,busy:false};

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木放大镜</title>
+  <path d="m39 34 21 18-8 10-23-21Z" fill="#66765e"/>
+  <path d="m39 32 20 18-8 8-21-20Z" fill="#a5b394" stroke="#748568" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m48 42 11 8-8 8-10-10Z" fill="#829575"/>
+  <path d="m52 48 5 4-5 5-5-4Z" fill="#bf5746"/>
+  <path d="M19 8h14l13 12v15L34 47H18L5 35V20Z" fill="#788a6c" stroke="#6c7d61" stroke-linejoin="round"/>
+  <path d="M19 5h14l12 12v15L33 44H18L6 32V18Zm3 10-7 7v7l7 6h7l7-7v-7l-7-6Z" fill="#c3ceb2" fill-rule="evenodd" stroke="#7e906f" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m22 15-7 7v7l7 6h7l7-7v-7l-7-6Z" fill="#e8efe1" stroke="#8b9d7b" stroke-width="1.1"/>
+  <path d="m20 26 8-8m-4 13 8-8" stroke="#fffdf5" stroke-width="2.5" stroke-linecap="round" opacity=".85"/>
+  <path d="M25 5v9M7 25h8m20 2h9M25 35v9" stroke="#8f9f7d" stroke-width=".9"/>
+  <g stroke="#91a37f" stroke-width=".75">
+    <path d="M17 9v2.2c0 3.2 7 3.2 7 0V9" fill="#9baa8b"/>
+    <ellipse cx="20.5" cy="9" rx="3.5" ry="2" fill="#e5ebd9"/>
+    <path d="M29 9v2.2c0 3.2 7 3.2 7 0V9" fill="#9baa8b"/>
+    <ellipse cx="32.5" cy="9" rx="3.5" ry="2" fill="#e5ebd9"/>
+  </g>
+  <ellipse cx="43" cy="42" rx="3.3" ry="2.1" transform="rotate(43 43 42)" fill="#d8e1c9" stroke="#829571" stroke-width=".8"/>
+</svg>

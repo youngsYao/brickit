@@ -56,3 +56,5 @@ AI 入口已提供图片 / 拍照与生成设置；当前不发送图片至 AI �
 `dist/assets/upload-stationery.png` 使用内置 ImageGen 根据提供的信纸参考图重新生成，移除右下角水印，调整为接近页面 `#f7f6f2`、面板 `#fcfbf7` 的暖白底色和浅灰绿边线，外围保留透明。它作为上传框底层背景，真实的文字、按钮、预览与拖放区域继续由 HTML/CSS 实现。生成提示词见 `outputs/ui-stationery-prompt.txt`。
 
 相机模型与颜色、方向控件使用原生 SVG 几何绘制。方向图按同一块示例积木的真实 Y 轴朝向投影，凸点按目录颜色着色，选中状态、颜色名称和角度文字均由当前编辑状态更新。
+
+搜索、作品文件夹与新建创作使用同一套原生 SVG 积木图标：`dist/assets/brick-search.svg`、`brick-folder.svg` 与 `brick-brush.svg`。图形包含凸点、拼缝和浅灰绿立体侧面，并在搜索框、页头、作品导航及动态空状态中复用。

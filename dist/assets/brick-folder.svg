@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <title>积木文件夹</title>
+  <ellipse cx="31" cy="56" rx="26" ry="3" fill="#5a6c4d" opacity=".09"/>
+  <path d="M8 14h16l7 7h24v31H8Z" fill="#899d76" stroke="#718662" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M8 11h16l7 7h23v31H8Z" fill="#d4dec2" stroke="#879c73" stroke-width="1.2" stroke-linejoin="round"/>
+  <path d="M8 11h16l7 7-3 3-6-6H8Z" fill="#eaf0de"/>
+  <path d="M18 23h27v22H18Z" fill="#faf9f1" stroke="#bdc9aa" stroke-width=".8"/>
+  <path d="M23 28h16m-16 5h12" stroke="#c1cbb2" stroke-width="1.5" stroke-linecap="round"/>
+  <path d="m5 34 53-5-9 25H4Z" fill="#788d65" stroke="#6d835b" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m6 30 53-4-9 25H4Z" fill="#b9c9a4" stroke="#83996f" stroke-width="1.1" stroke-linejoin="round"/>
+  <path d="m4 51 46 0 9-25v4l-9 25H4Z" fill="#92a77d"/>
+  <path d="m7 33 48-3" stroke="#e4ecd8" stroke-width="1.2"/>
+  <path d="m23 30-4 21m20-22-5 22M6 42l47-3" stroke="#95aa7f" stroke-width=".8"/>
+  <g stroke="#8da475" stroke-width=".7">
+    <path d="M12 29v2.5c0 3 8 3 8 0V29" fill="#98ae81"/>
+    <ellipse cx="16" cy="29" rx="4" ry="2" fill="#e0e9d1"/>
+    <path d="M27 28v2.5c0 3 8 3 8 0V28" fill="#98ae81"/>
+    <ellipse cx="31" cy="28" rx="4" ry="2" fill="#e0e9d1"/>
+    <path d="M42 27v2.5c0 3 8 3 8 0V27" fill="#98ae81"/>
+    <ellipse cx="46" cy="27" rx="4" ry="2" fill="#e0e9d1"/>
+  </g>
+  <path d="M10 44h7v4h-7Z" fill="#cc6953"/>
+</svg>
