@@ -33,7 +33,8 @@ cp .env.example .env
 
 - `BRICKWRIGHT_GENERATION_MODEL`：支持图像输入与工具调用的模型，使用 `openai/`、`anthropic/` 或 `gemini/` 前缀。
 - 对应服务商的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 `GEMINI_API_KEY`。
-- `LDRAW_LIBRARY_PATH`：从 [LDraw 官方零件库](https://library.ldraw.org/updates?latest) 下载并解压后的 `ldraw` 目录绝对路径。
+- `LDRAW_LIBRARY_PATH`：可留空，默认使用 `~/.cache/brick-it/ldraw`；已有其他安装时可填其 `ldraw` 目录绝对路径。
+- `BRICK_IT_AUTO_DOWNLOAD_LDRAW`：默认 `true`，首次启动缺少零件库时自动下载固定版本。离线环境可设为 `false`。
 
 然后启动：
 
@@ -41,19 +42,38 @@ cp .env.example .env
 npm run dev
 ```
 
+首次启动会在服务就绪前安装缺少的零件库（压缩包约 140 MiB），已有有效安装直接复用。如果网络或校验失败，编辑器仍会启动，并提示手动重试（安装成功后重新启动服务）；未完成的库不会被当作可用安装。
+
 打开 [http://127.0.0.1:4173](http://127.0.0.1:4173)。生成服务和静态页面共用同一地址。点击“生成”后，照片会发送至配置的模型服务商。相机需要浏览器授权，并在 HTTPS 或 localhost 下使用；三维工作台需要 WebGL 2。
 
 只运行原有静态工作台可使用 `npm run dev:static`，此时生成入口会明确显示服务不可用。已有静态托管不会自动获得 Python 后端。
 
 ## LDraw 零件仓库
 
-本机已下载并解压官方 LDraw 完整零件库至 `~/.cache/brick-it/ldraw`，并在未提交的 `.env` 中设置 `LDRAW_LIBRARY_PATH`。当前库有 24,985 个顶层零件文件，其中 21,676 种具备本项目所需的 SDK 元数据和工作台网格，可以在仓库浏览。数字会随以后更新的零件库变化。
+零件库通过独立的 [GitHub Release 附件](https://github.com/youngsYao/brickit/releases/tag/ldraw-library-2026-11-01) 分发，不进入 Git 历史。`ldraw-library.json` 固定附件 URL、SHA-256、压缩与解压大小和文件数；本项目快照日期为 2026-11-01，对应上游 Parts Update 2026-10。原始 ZIP 保持字节不变。
+
+`npm run dev` 会自动准备缺少的库，也可以手动安装或仅检查：
+
+```sh
+npm run setup:ldraw
+npm run check:ldraw
+# 指定新的缓存目录
+npm run setup:ldraw -- --destination /path/to/ldraw
+# 离线安装：仍然验证同一份 SHA-256 和大小
+npm run setup:ldraw -- --destination /path/to/ldraw --archive /path/to/ldraw-complete-2026-11-01.zip
+```
+
+脚本也可以在未安装项目依赖时通过 `python3 scripts/download_ldraw.py` 运行（Python ≥ 3.9）。默认读取非空环境变量 `LDRAW_LIBRARY_PATH`，其次读取项目 `.env` 中的同名路径，再使用 `~/.cache/brick-it/ldraw`。使用 `--destination` 时请同步设置 `.env` 的 `LDRAW_LIBRARY_PATH`，以便服务使用该目录。
+
+下载按流处理，完整验证后才解压；解压在同级临时目录完成，通过必需文件、许可文件、路径安全、文件数和大小检查后再原子安装。失败会清理临时数据，保留现有库。并发安装通过目录锁协调；`--check` 不下载、不写入。已有手动安装的有效库原样复用，不会补写标记；脚本管理的库保留 `.brickit-library.json`，版本或校验值不匹配时要求改用新目录，不会自动覆盖旧库。管理标记与结构检查不等于每次启动重新校验全部文件。
+
+首次安装的目录会保留原 ZIP 的许可与归因，并补充附带 mklist 工具所需的 GPL 全文；详见 [LDraw 归因说明](docs/LDRAW-NOTICE.md)。默认缓存目录在本机包含 24,985 个顶层零件文件，其中 21,676 种具有 SDK 元数据和工作台网格，可在仓库浏览。
 
 打开“零件仓库”即可查看真实模型缩略图，无需 AI API Key。仓库使用 Three.js r180 的官方 `LDrawLoader`，直接读取本地 `.dat` 文件及子件、基础图元和 `LDConfig.ldr`。每页 24 件，按可见范围加载；所有缩略图共享一个离屏渲染器，并缓存模型和图片。
 
 支持编号、英文名称与常见中文类别搜索、分类筛选、分页和预览颜色切换。点击“在工作台使用”会读取该零件的 SDK 网格，放置后随作品保存；仓库完整 LDraw 外观与工作台用于编辑的内缩碰撞网格有少许区别。预览颜色不代表该零件颜色组合实际在售。
 
-如需在其他机器下载，可从 [LDraw 官方下载页](https://library.ldraw.org/updates?latest) 获取完整库，解压后设置 `LDRAW_LIBRARY_PATH`，重启服务。零件文件仅通过受限的只读接口提供，不能读取库目录之外的文件。
+其他机器使用相同的安装命令即可获取同一快照，无需 GitHub 登录或 AI API Key。脚本不使用会变化的 `latest` 链接，也不会在下载失败后静默切换至其他版本。零件文件仅通过受限的只读接口提供，不能读取库目录之外的文件。
 
 ## BrickWright 生成流程
 
@@ -97,6 +117,7 @@ npm run dev
 
 ```sh
 npm run check
+npm run check:ldraw
 npm test
 npm run test:backend
 npm run test:ui
@@ -119,6 +140,7 @@ npm run test:catalog
 - `dist/index.html` / `dist/style.css`：响应式页面与工作台布局。
 - `dist/app.js` / `dist/generation.js`：页面状态、生成任务、编辑、作品和导出流程。
 - `server/`：FastAPI 接口、任务进程、官方 SDK 适配、验收及坐标转换。
+- `scripts/download_ldraw.py` / `ldraw-library.json`：零件库自动安装入口与固定快照清单。
 - `dist/model.js`：Three.js 模型、拾取、放置、逐颗动画和图片渲染。
 - `dist/data.js`：示例目录、模型数据、重叠检查、本地作品存储。
 - `dist/ui-art.js`：积木相机、可着色凸点与四种方向的原生 SVG 图形。

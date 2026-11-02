@@ -1,0 +1,30 @@
+{
+  "version": "snapshot-2026-11-01",
+  "releaseTag": "ldraw-library-2026-11-01",
+  "url": "https://github.com/youngsYao/brickit/releases/download/ldraw-library-2026-11-01/ldraw-complete-2026-11-01.zip",
+  "sha256": "023083918da2d3697c794fb4267975509584f3611b993095874206a803fa610f",
+  "archiveBytes": 146853687,
+  "extractedBytes": 553468678,
+  "fileCount": 37448,
+  "rootDirectory": "ldraw",
+  "requiredFiles": [
+    "LDConfig.ldr",
+    "parts/3001.dat",
+    "p/stud.dat"
+  ],
+  "licenseFiles": [
+    "CAreadme.txt",
+    "CAlicense.txt",
+    "CAlicense4.txt"
+  ],
+  "upstreamUrl": "https://library.ldraw.org/library/updates/complete.zip",
+  "attribution": "LDraw.org Parts Library; individual creators are named in each part file. Archive redistributed without modification, including its original license and attribution files.",
+  "upstreamVersion": "Parts Update 2026-10",
+  "supplementaryLicenseFiles": [
+    {
+      "source": "docs/licenses/GPL-2.0.txt",
+      "target": "COPYING-GPL-2.0.txt",
+      "sha256": "edaef632cbb643e4e7a221717a6c441a4c1a7c918e6e4d56debc3d8739b233f6"
+    }
+  ]
+}

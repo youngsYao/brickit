@@ -22,3 +22,7 @@ records/
 
 .brick-it-records/
 output/playwright/
+
+# The library is distributed as a Release asset, never as Git source files.
+/ldraw/
+ldraw-complete-*.zip

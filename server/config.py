@@ -9,6 +9,8 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+DEFAULT_LDRAW_LIBRARY = Path.home() / ".cache" / "brick-it" / "ldraw"
+
 ROOT = Path(__file__).resolve().parent.parent
 PART_LIMITS = {"small": 80, "medium": 250, "large": 600}
 PROVIDERS = {
@@ -25,6 +27,13 @@ def bounded_env(name: str, default: float, low: float, high: float) -> float:
     return value
 
 
+def boolean_env(name: str, default: bool) -> bool:
+    value = os.environ.get(name, "true" if default else "false").strip().lower()
+    if value not in {"true", "false", "1", "0", "yes", "no"}:
+        raise ValueError(f"{name} must be true or false")
+    return value in {"true", "1", "yes"}
+
+
 @dataclass(frozen=True)
 class Settings:
     records_dir: Path
@@ -37,10 +46,17 @@ class Settings:
     max_active: int = 2
     max_image_bytes: int = 8 * 1024 * 1024
     max_body_bytes: int = 12 * 1024 * 1024
+    auto_download_ldraw: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv(ROOT / ".env", override=False)
+        # A blank sample setting should still resolve to the same cache for the
+        # parts browser, renderer, generated builds, and the bootstrap command.
+        library = Path(os.environ.get("LDRAW_LIBRARY_PATH", "").strip() or DEFAULT_LDRAW_LIBRARY).expanduser()
+        if not library.is_absolute():
+            library = ROOT / library
+        os.environ["LDRAW_LIBRARY_PATH"] = str(library.resolve())
         records = Path(os.environ.get("BRICK_IT_RECORDS_DIR", ".brick-it-records"))
         if not records.is_absolute():
             records = ROOT / records
@@ -52,6 +68,7 @@ class Settings:
             max_validations=int(bounded_env("BRICK_IT_MAX_VALIDATIONS", 30, 1, 50)),
             timeout=bounded_env("BRICK_IT_JOB_TIMEOUT", 900, 30, 1800),
             request_timeout=bounded_env("BRICK_IT_REQUEST_TIMEOUT", 120, 10, 180),
+            auto_download_ldraw=boolean_env("BRICK_IT_AUTO_DOWNLOAD_LDRAW", True),
         )
 
     @property

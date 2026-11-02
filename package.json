@@ -10,7 +10,9 @@
     "test": "node --test tests/*.test.mjs",
     "test:backend": "uv run pytest server/tests -q",
     "test:ui": "python3 tests/generation-ui.py",
-    "test:catalog": "python3 tests/parts-catalog-ui.py"
+    "test:catalog": "python3 tests/parts-catalog-ui.py",
+    "setup:ldraw": "uv run python scripts/download_ldraw.py",
+    "check:ldraw": "uv run python scripts/download_ldraw.py --check"
   },
   "dependencies": {
     "three": "^0.180.0",
