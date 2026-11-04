@@ -1,3 +1,5 @@
+import { createSongenPieces, SONGEN_EXAMPLE } from './examples/songen.js';
+
 /**
  * brick.it's browser-local model and curated sample-part data.
  * The built-in catalog contains samples. Generated projects carry their own
@@ -161,12 +163,23 @@ export function createDefaultPieces() {
 }
 export const DEFAULT_PIECES = Object.freeze(createDefaultPieces().map(Object.freeze));
 
-export function createExampleProject() {
+export const BUILTIN_EXAMPLES = Object.freeze([
+  Object.freeze({ id:'apple-example', title:'一颗苹果', description:'从第一块，到最后一片绿叶。', sourceImage:null, thumbnail:'./assets/example-preview.jpg' }),
+  Object.freeze({ ...SONGEN_EXAMPLE, id:'songen-example', title:'厦大 · 颂恩楼', sourceImage:'./assets/songen-reference.jpg', thumbnail:'./assets/songen-preview.png' })
+]);
+const builtinExampleIndex = new Map(BUILTIN_EXAMPLES.map(example => [example.id, example]));
+function createBuiltinPieces(id) { return id === 'songen-example' ? createSongenPieces() : createDefaultPieces(); }
+
+/** Bundled examples work without the generation service or browser storage. */
+export function createExampleProject(exampleId = 'apple-example') {
+  const example = builtinExampleIndex.get(exampleId);
+  if (!example) throw new TypeError('没有找到这个内置示例。');
   const now=new Date().toISOString();
+  const pieces=createBuiltinPieces(exampleId);
   return {
-    id:'apple-example',title:'一颗苹果',source:'example',sourceImage:null,
+    ...example, exampleId, source:'example',
     createdAt:now,updatedAt:now,favorite:false,version:1,
-    pieces:createDefaultPieces(),originalPieces:createDefaultPieces(),settings:{size:'medium',style:'classic'}
+    pieces,originalPieces:cloneProject(pieces),settings:{size:exampleId==='songen-example'?'large':'medium',style:'classic'}
   };
 }
 export function cloneProject(project) {
@@ -174,13 +187,14 @@ export function cloneProject(project) {
   return typeof structuredClone === 'function' ? structuredClone(project) : JSON.parse(JSON.stringify(project));
 }
 // Keep the generation/template baseline inside every draft so it survives reloads
-// and the removal of an earlier saved version. Older apple drafts can be repaired.
+// and the removal of an earlier saved version. Bundled-example drafts can be repaired.
 export async function resolveOriginalPieces(project, getProject = id => library.get(id)) {
   const visited=new Set();
   let current=project;
   for(let depth=0;current&&depth<60;depth++) {
     if(Array.isArray(current.originalPieces))return cloneProject(current.originalPieces);
-    if(current.id==='apple-example'||current.rootId==='apple-example'||current.source==='example')return createDefaultPieces();
+    const builtinId=[current.exampleId,current.rootId,current.id].find(id=>builtinExampleIndex.has(id));
+    if(builtinId)return createBuiltinPieces(builtinId);
     if(current.id&&visited.has(current.id))break;
     if(current.id)visited.add(current.id);
     if(!current.draft&&!current.parentId&&(!current.rootId||current.rootId===current.id))return cloneProject(current.pieces);

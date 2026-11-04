@@ -43,6 +43,9 @@ export async function createModel(container, options = {}) {
   }
   renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
+  // Camera movement leaves model shadows unchanged. Refresh only when the
+  // model, its assembly visibility, or the lighting actually changes.
+  renderer.shadowMap.autoUpdate = false;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -132,7 +135,9 @@ export async function createModel(container, options = {}) {
     }
     const shape = spec.shape || part?.shape || (spec.h < .3 ? 'plate' : 'brick');
     if (shape === 'mesh') throw new TypeError(`零件 ${spec.partId || spec.id} 的三维网格尚未加载。`);
-    const w = Math.max(1, finite(spec.w, part?.w || 1)), d = Math.max(1, finite(spec.d, part?.d || 1));
+    // Architectural trim can be narrower than one stud. Honor its recorded
+    // dimensions so the rendered shape agrees with editing collision bounds.
+    const w = Math.max(.1, finite(spec.w, part?.w || 1)), d = Math.max(.1, finite(spec.d, part?.d || 1));
     const h = Math.max(.08, finite(spec.h, part?.h || .56));
     const hasStuds = spec.studs ?? part?.studs ?? !['tile', 'beam', 'connector'].includes(shape);
     const cacheKey = [shape, w, d, h, hasStuds].join(':');
@@ -180,6 +185,9 @@ export async function createModel(container, options = {}) {
   let autoRotate = false, exploded = false, placement = null, validatePlacement = options.validatePlacement;
   let theta = -.53, targetTheta = -.53, phi = .40, targetPhi = .40, zoom = 1, targetZoom = 1;
   let cameraCenter = new THREE.Vector3(0, 2.7, 0), modelHeight = 6.3, modelWidth = 7, modelRadius = 4;
+  let explodedHeight = 6.3, largeModel = false;
+  const explodedCenter = new THREE.Vector3(0, 2.7, 0);
+  const placementBounds = { minX: -8 * U, maxX: 8 * U, minZ: -8 * U, maxZ: 8 * U };
   let viewportWidth = 1, viewportHeight = 1, visible = false;
   let disposed = false, contextLost = false, needsFrame = true, raf = 0, lastTime = performance.now();
   const pointer = new THREE.Vector2(), raycaster = new THREE.Raycaster();
@@ -204,22 +212,60 @@ export async function createModel(container, options = {}) {
     for (const [key, material] of materialCache) if (!materialsInUse.has(material)) { material.dispose(); materialCache.delete(key); }
   }
   function updateBounds() {
-    if (!records.length) { cameraCenter.set(0, 2.7, 0); modelHeight = 6.3; modelWidth = 7; modelRadius = 4; return; }
-    const bounds = new THREE.Box3();
+    if (!records.length) {
+      cameraCenter.set(0, 2.7, 0); modelHeight = 6.3; modelWidth = 7; modelRadius = 4;
+      explodedCenter.copy(cameraCenter); explodedHeight = modelHeight;
+      updateSceneBounds(new THREE.Box3(new THREE.Vector3(-3.5, 0, -3.5), new THREE.Vector3(3.5, 6.3, 3.5)));
+      return;
+    }
+    const bounds = new THREE.Box3(), expandedBounds = new THREE.Box3();
     for (const rec of records) {
       const local = rec.mesh.geometry.boundingBox.clone();
       const matrix = new THREE.Matrix4().compose(rec.base, rec.mesh.quaternion, rec.mesh.scale);
-      bounds.union(local.applyMatrix4(matrix));
+      local.applyMatrix4(matrix); bounds.union(local);
+      local.translate(new THREE.Vector3(0, finite(rec.spec.layer, 1) * .245, 0));
+      expandedBounds.union(local);
     }
     const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
-    modelHeight = Math.max(3, size.y); modelWidth = Math.max(5.8, Math.hypot(size.x, size.z) * .88); modelRadius = Math.max(3.9, Math.max(size.x, size.z) / 2 + 1);
+    const wideFrame = Math.max(size.x, size.y, size.z) > 10;
+    modelHeight = Math.max(3, size.y); modelWidth = Math.max(5.8, Math.hypot(size.x, size.z) * (wideFrame ? 1 : .88)); modelRadius = Math.max(3.9, Math.max(size.x, size.z) / 2 + 1);
     cameraCenter.set(center.x, Math.max(1.6, bounds.min.y + size.y * .44), center.z);
+    explodedHeight = Math.max(3, expandedBounds.max.y - expandedBounds.min.y);
+    explodedCenter.set(center.x, Math.max(1.6, expandedBounds.min.y + explodedHeight * .44), center.z);
+    updateSceneBounds(bounds);
+  }
+  function updateSceneBounds(bounds) {
+    const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
+    largeModel = Math.max(size.x, size.y, size.z) > 10;
+    placementBounds.minX = Math.min(-8 * U, bounds.min.x - 2 * U);
+    placementBounds.maxX = Math.max(8 * U, bounds.max.x + 2 * U);
+    placementBounds.minZ = Math.min(-8 * U, bounds.min.z - 2 * U);
+    placementBounds.maxZ = Math.max(8 * U, bounds.max.z + 2 * U);
+    // Wide architectural models carry their own foundation rather than the
+    // small circular display stand used by the original apple.
+    base.visible = studs.visible = Math.max(size.x, size.z) <= 10;
+    if (largeModel) {
+      const radius = Math.max(8, size.length() * .6);
+      const direction = new THREE.Vector3(-7, 13, 8).normalize();
+      key.target.position.copy(center);
+      key.position.copy(center).addScaledVector(direction, radius * 2.5);
+      Object.assign(key.shadow.camera, { left: -radius, right: radius, top: radius, bottom: -radius, near: .5, far: radius * 5 });
+    } else {
+      key.position.set(-7, 13, 8); key.target.position.set(0, 2, 0);
+      Object.assign(key.shadow.camera, { left: -12, right: 12, top: 13, bottom: -9, near: .5, far: 55 });
+    }
+    key.shadow.camera.updateProjectionMatrix();
+    renderer.shadowMap.needsUpdate = true;
   }
   function updateCamera(aspect = viewportWidth / viewportHeight) {
-    const framing = Math.max(8.3, modelHeight * 1.34, modelWidth / Math.max(.45, aspect) * 1.08);
+    // Tall models can gain many scene units when their assembly layers spread.
+    // Frame the expanded bounds, while preserving the original apple framing.
+    const expanded = exploded && largeModel, height = expanded ? explodedHeight : modelHeight;
+    const framing = Math.max(8.3, height * 1.34, modelWidth / Math.max(largeModel ? .1 : .45, aspect) * 1.08);
     camera.left = -framing * aspect / 2; camera.right = framing * aspect / 2; camera.top = framing / 2; camera.bottom = -framing / 2;
-    const target = cameraCenter.clone(); if (exploded) target.y += 1.1;
+    const target = (expanded ? explodedCenter : cameraCenter).clone(); if (exploded && !expanded) target.y += 1.1;
     const distance = Math.max(20, modelRadius * 3);
+    camera.far = Math.max(150, distance + height + modelRadius * 2);
     camera.position.set(target.x + Math.sin(theta) * Math.cos(phi) * distance, target.y + Math.sin(phi) * distance, target.z + Math.cos(theta) * Math.cos(phi) * distance);
     camera.lookAt(target); camera.zoom = zoom; camera.updateProjectionMatrix(); camera.updateMatrixWorld(true);
   }
@@ -271,9 +317,9 @@ export async function createModel(container, options = {}) {
     const width = Math.abs(quarter % 2) ? part.d : part.w, depth = Math.abs(quarter % 2) ? part.w : part.d;
     const snap = (value, studs) => (Math.round(value / U - studs / 2) + studs / 2) * U;
     const proposal = {
-      x: clamp(snap(hitPoint.x, width), -8 * U, 8 * U),
+      x: clamp(snap(hitPoint.x, width), placementBounds.minX, placementBounds.maxX),
       y: Math.max(0, surfaceY) + part.h / 2,
-      z: clamp(snap(hitPoint.z, depth), -8 * U, 8 * U),
+      z: clamp(snap(hitPoint.z, depth), placementBounds.minZ, placementBounds.maxZ),
       rx: 0, ry: rotation, rz: 0
     };
     const candidate = { ...part, ...proposal, partId: part.id, id: '__placement__', color: placement.color, type: 'body' };
@@ -300,8 +346,12 @@ export async function createModel(container, options = {}) {
         if (!rec.mesh.visible) continue;
         const explodeOffset = exploded ? finite(rec.spec.layer, 1) * .245 : 0;
         const targetY = rec.base.y + explodeOffset;
-        if (Math.abs(rec.mesh.position.y - targetY) > .002) { rec.mesh.position.y = THREE.MathUtils.lerp(rec.mesh.position.y, targetY, Math.min(1, ease * 1.3)); moving = true; }
-        else rec.mesh.position.y = targetY;
+        if (Math.abs(rec.mesh.position.y - targetY) > .002) {
+          rec.mesh.position.y = THREE.MathUtils.lerp(rec.mesh.position.y, targetY, Math.min(1, ease * 1.3));
+          renderer.shadowMap.needsUpdate = true; moving = true;
+        } else if (rec.mesh.position.y !== targetY) {
+          rec.mesh.position.y = targetY; renderer.shadowMap.needsUpdate = true; needsFrame = true;
+        }
       }
       if (moving || needsFrame) { updateCamera(); updateSelection(); renderer.render(scene, camera); needsFrame = false; }
     }
@@ -354,7 +404,7 @@ export async function createModel(container, options = {}) {
   function onLeave() { if (!pointerDown && ghost) { ghost.visible = false; if (ghostEdges) ghostEdges.visible = false; needsFrame = true; } }
   const onWheel = event => { event.preventDefault(); targetZoom = clamp(targetZoom * (event.deltaY > 0 ? .94 : 1.06), .48, 2.4); needsFrame = true; };
   const onContextLost = event => { event.preventDefault(); contextLost = true; onError?.(new Error('3D 视图暂时中断，请刷新页面后重试。')); };
-  const onContextRestored = () => { contextLost = false; needsFrame = true; };
+  const onContextRestored = () => { contextLost = false; renderer.shadowMap.needsUpdate = true; needsFrame = true; };
   container.addEventListener('pointerdown', onPointerDown); container.addEventListener('pointermove', onPointerMove); container.addEventListener('pointerup', onPointerUp);
   container.addEventListener('pointercancel', onCancel); container.addEventListener('pointerleave', onLeave); container.addEventListener('wheel', onWheel, { passive: false });
   renderer.domElement.addEventListener('webglcontextlost', onContextLost); renderer.domElement.addEventListener('webglcontextrestored', onContextRestored);
@@ -371,7 +421,7 @@ export async function createModel(container, options = {}) {
       exploded = false; zoom = 1;
       if (!poster) { theta = -.53; phi = .4; }
       const sceneWidth = poster ? Math.round(size * 1.2) : size, sceneHeight = poster ? Math.round(size * .76) : size;
-      renderer.setPixelRatio(1); renderer.setSize(sceneWidth, sceneHeight, false); updateCamera(sceneWidth / sceneHeight); modelGroup.updateMatrixWorld(true); renderer.render(scene, camera);
+      renderer.setPixelRatio(1); renderer.setSize(sceneWidth, sceneHeight, false); updateCamera(sceneWidth / sceneHeight); modelGroup.updateMatrixWorld(true); renderer.shadowMap.needsUpdate = true; renderer.render(scene, camera);
       if (poster) {
         context.drawImage(renderer.domElement, (size - sceneWidth) / 2, size * .11, sceneWidth, sceneHeight);
         const pad = size * .06;
@@ -389,7 +439,7 @@ export async function createModel(container, options = {}) {
       recordStates.forEach(({ rec, visible, y }) => { rec.mesh.visible = visible; rec.mesh.position.y = y; });
       theta = old.theta; phi = old.phi; zoom = old.zoom; exploded = old.exploded; selectionBox.visible = old.selection;
       if (ghost) ghost.visible = old.ghost; if (ghostEdges) ghostEdges.visible = old.ghostEdges; scene.background = old.background;
-      renderer.setPixelRatio(oldRatio); renderer.setSize(oldSize.x, oldSize.y, false); updateCamera(); modelGroup.updateMatrixWorld(true); updateSelection(); renderer.render(scene, camera); needsFrame = true;
+      renderer.setPixelRatio(oldRatio); renderer.setSize(oldSize.x, oldSize.y, false); updateCamera(); modelGroup.updateMatrixWorld(true); updateSelection(); renderer.shadowMap.needsUpdate = true; renderer.render(scene, camera); needsFrame = true;
     }
     return output;
   }
@@ -442,7 +492,7 @@ export async function createModel(container, options = {}) {
 
       renderer.setRenderTarget(null); renderer.setPixelRatio(1); renderer.setSize(size, size, false);
       renderer.setScissorTest(false); renderer.setClearColor(0x000000, 0);
-      renderer.render(scene, thumbnailCamera); context.drawImage(renderer.domElement, 0, 0, size, size);
+      renderer.shadowMap.needsUpdate = true; renderer.render(scene, thumbnailCamera); context.drawImage(renderer.domElement, 0, 0, size, size);
       return output.toDataURL('image/png');
     } finally {
       for (const { mesh, visible, position } of recordStates) { mesh.visible = visible; mesh.position.copy(position); }
@@ -451,7 +501,7 @@ export async function createModel(container, options = {}) {
       renderer.setClearColor(oldClearColor, oldClearAlpha);
       renderer.setPixelRatio(oldRatio); renderer.setSize(oldSize.x, oldSize.y, false);
       renderer.setRenderTarget(oldTarget); renderer.setViewport(oldViewport); renderer.setScissor(oldScissor); renderer.setScissorTest(oldScissorTest);
-      if (!disposed && !contextLost) renderer.render(scene, camera);
+      if (!disposed && !contextLost) { renderer.shadowMap.needsUpdate = true; renderer.render(scene, camera); }
       needsFrame = oldNeedsFrame;
     }
   }
@@ -471,6 +521,7 @@ export async function createModel(container, options = {}) {
       progress = records.length;
       if (!records.some(r => sameId(r.spec.id, selectedId))) selectedId = null;
       updateBounds(); modelGroup.updateMatrixWorld(true); pruneGeometry(); updateSelection(); needsFrame = true;
+      renderer.shadowMap.needsUpdate = true;
     },
     setProgress(value, { animate = true } = {}) {
       if (disposed) return;
@@ -483,14 +534,14 @@ export async function createModel(container, options = {}) {
         if (newlyShown && animate && !reducedMotion && i === progress - 1 && progress > previous) rec.mesh.position.y = target + 1.75;
         else if (!animate || !visible || i !== progress - 1) rec.mesh.position.y = target;
       });
-      updateSelection(); needsFrame = true;
+      updateSelection(); renderer.shadowMap.needsUpdate = true; needsFrame = true;
     },
     setMode(value) {
       mode = value === 'edit' ? 'edit' : 'build';
       if (mode === 'edit') { records.forEach(rec => { rec.mesh.visible = true; }); }
       else { placement = null; clearGhost(); records.forEach((rec, i) => { rec.mesh.visible = i < progress; }); }
       container.dataset.modelMode = mode; container.style.cursor = placement ? 'crosshair' : 'grab';
-      updateSelection(); needsFrame = true;
+      updateSelection(); renderer.shadowMap.needsUpdate = true; needsFrame = true;
     },
     selectPiece(id) { selectedId = id; updateSelection(); needsFrame = true; },
     setPlacement(part, color = '#d86d47', rotationRadians = 0) {
