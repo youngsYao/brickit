@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sys
 import warnings
 from pathlib import Path
 
-from .config import PART_LIMITS, Settings
+from .config import MAX_CRITIQUE_ROUNDS, PART_LIMITS, Settings
 from .exporter import ExportRejected, export_project
+from .providers import ProviderBudgetExceeded, ProviderRateLimited, ProviderRequestTimeout, safe_failure_details, worker_completion_provider
+from .resume import ResumeRejected, resume_conversation
 from .storage import atomic_json
 
 
@@ -58,10 +61,46 @@ def verify_completed_run(record, report) -> None:
         raise ExportRejected("SOURCE_CHANGED", "模型源文件在校验后发生变化，请重新生成。")
 
 
+def agent_config(job_dir: Path, settings: Settings):
+    """Translate explicit unlimited settings without inventing a larger cap."""
+    from brickwright.config import Config, Effort
+
+    return Config(
+        records_dir=job_dir / "sdk", model=settings.model,
+        effort=Effort(settings.moonshot_reasoning_effort) if settings.provider == "moonshot" else Effort.HIGH,
+        max_cost=settings.max_cost if settings.max_cost is not None else float("inf"),
+        max_turns=settings.max_turns, max_validations=settings.max_validations,
+        request_timeout=settings.request_timeout,
+        build_timeout=30 if settings.timeout is not None else float("inf"),
+        render_timeout=90 if settings.timeout is not None else float("inf"),
+        # One visual verdict may trigger one builder revision, then the SDK
+        # renders the final source without starting another critique round.
+        subagents_enabled=False, max_critique_rounds=MAX_CRITIQUE_ROUNDS,
+        max_viewpoint_iterations=settings.max_viewpoint_iterations,
+    )
+
+
+def generation_settings(settings: Settings) -> dict:
+    """Keep the actual controls reviewable with JSON null for unlimited limits."""
+    return {
+        "reasoningEffort": settings.moonshot_reasoning_effort if settings.provider == "moonshot" else "high",
+        "maxOutputTokens": settings.moonshot_max_output_tokens if settings.provider == "moonshot" else None,
+        "streaming": settings.moonshot_stream if settings.provider == "moonshot" else settings.openai_stream if settings.provider == "openai" else False,
+        "budgetUsd": settings.max_cost,
+        "jobTimeoutSeconds": settings.timeout,
+        "requestTimeoutSeconds": settings.request_timeout,
+        "buildTimeoutSeconds": 30 if settings.timeout is not None else None,
+        "renderTimeoutSeconds": 90 if settings.timeout is not None else None,
+        "maxTurns": settings.max_turns or None,
+        "maxValidations": settings.max_validations or None,
+        "maxCritiqueRounds": MAX_CRITIQUE_ROUNDS,
+        "maxViewpointIterations": settings.max_viewpoint_iterations,
+    }
+
+
 def run(job_dir: Path, settings: Settings) -> None:
     from bricklayer.io import from_ldraw
     from bricklayer.io.reader import LDrawImportWarning
-    from brickwright.config import Config, Effort
     from brickwright.driver.loop import run_agent
     from brickwright.driver.narration import Narrator
     from brickwright.record import Record
@@ -100,15 +139,27 @@ def run(job_dir: Path, settings: Settings) -> None:
                 emit("generating", "正在根据视觉反馈改善模型。")
 
     request = json.loads((job_dir / "request.json").read_text())
-    config = Config(
-        records_dir=job_dir / "sdk", model=settings.model, effort=Effort.HIGH,
-        max_cost=settings.max_cost, max_turns=settings.max_turns,
-        max_validations=settings.max_validations, request_timeout=settings.request_timeout,
-        build_timeout=30, render_timeout=90, subagents_enabled=False,
-        max_critique_rounds=2, max_viewpoint_iterations=3,
-    )
+    config = agent_config(job_dir, settings)
     record = Record.create(config, prompt=build_prompt(request), image=job_dir / "input.png")
-    report = run_agent(record, config, narrator=ProgressNarrator())
+    with resume_conversation(record, job_dir, settings.records_dir) as resumed, worker_completion_provider(
+        settings, checkpoint_path=job_dir / "conversation-checkpoint.json",
+        on_wait=lambda seconds: emit("generating", f"模型服务要求等待约 {max(1, math.ceil(seconds / 60))} 分钟，恢复后将自动继续。"),
+    ) as accounting:
+        try:
+            report = run_agent(record, config, narrator=ProgressNarrator())
+        except ProviderBudgetExceeded as exc:
+            raise ExportRejected("BUDGET_EXCEEDED", "已达到费用上限或无法继续确认费用，未继续调用生成服务。") from exc
+        except ProviderRequestTimeout as exc:
+            raise ExportRejected("PROVIDER_TIMEOUT", "模型单次请求超时，已停止生成。请稍后重试或降低推理强度。") from exc
+        except ProviderRateLimited as exc:
+            raise ExportRejected("PROVIDER_RATE_LIMITED", "模型服务暂时达到调用限额，已停止生成。请稍后重试或检查服务商账户限额。") from exc
+        finally:
+            if accounting is not None:
+                atomic_json(job_dir / "provider-billing.json", accounting.snapshot())
+    billing = {"providerBilling": accounting.snapshot()} if accounting is not None else {}
+    billing["generationSettings"] = generation_settings(settings)
+    if resumed is not None:
+        billing["resumedFrom"] = resumed
     verify_completed_run(record, report)
 
     emit("validating", "正在独立复查最终导出的完整模型。")
@@ -128,7 +179,7 @@ def run(job_dir: Path, settings: Settings) -> None:
     project = export_project(
         build, job_id=job_dir.name, prompt=request["prompt"], size=request["size"],
         style=request["style"], source_image=source_image, max_parts=PART_LIMITS[request["size"]],
-        generation={"model": settings.model, "usage": report.usage.model_dump(mode="json"),
+        generation={**billing, "model": settings.model, "usage": report.usage.model_dump(mode="json"),
                     "critiqueRounds": report.critique_rounds, "critiqueMatched": report.critique_done,
                     "sourceSha256": report.source_sha256},
     )
@@ -140,6 +191,7 @@ def run(job_dir: Path, settings: Settings) -> None:
         (artifacts / name).write_bytes(content)
     hashes = {name: hashlib.sha256((artifacts / name).read_bytes()).hexdigest() for name in ("build.py", "build.ldr", "build.png")}
     safe_report = {
+        **billing,
         "jobId": job_dir.name, "engine": "BrickWright", "model": settings.model,
         "sourceSha256": report.source_sha256, "artifactSha256": hashes,
         "validation": project["generation"]["validation"],
@@ -163,9 +215,14 @@ def main() -> int:
         return 0
     except ExportRejected as exc:
         atomic_json(job_dir / "outcome.json", {"ok": False, "code": exc.code, "message": str(exc)})
-    except Exception:
+    except ResumeRejected:
+        atomic_json(job_dir / "outcome.json", {"ok": False, "code": "RESUME_REJECTED", "message": "无法恢复该任务，请使用同一照片与生成设置重试。"})
+    except Exception as exc:
         # Provider errors can contain credentials, HTTP bodies or generated
         # source. Keep only a fixed safe message in public records.
+        diagnostic = job_dir / "failure-diagnostic.json"
+        atomic_json(diagnostic, safe_failure_details(exc))
+        diagnostic.chmod(0o600)
         atomic_json(job_dir / "outcome.json", {"ok": False, "code": "GENERATION_FAILED", "message": "生成服务未能完成任务。请检查模型配置、网络和 LDraw 零件库后重试。"})
     return 1
 

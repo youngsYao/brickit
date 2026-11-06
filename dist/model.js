@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from './assets/vendor/RoundedBoxGeometry.js';
-import { mergeGeometries } from './assets/vendor/BufferGeometryUtils.js';
+import { mergeGeometries, toCreasedNormals } from './assets/vendor/BufferGeometryUtils.js';
 import { RoomEnvironment } from './assets/vendor/RoomEnvironment.js';
 import { UNIT, findPart, canPlace } from './data.js';
 
@@ -22,10 +22,26 @@ const sameId = (a, b) => a !== null && b !== null && String(a) === String(b);
  */
 export function createPartMeshGeometry(part) {
   if (!part?.mesh?.positions || !part?.mesh?.indices) throw new TypeError('生成零件缺少原始三维网格。');
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(part.mesh.positions, 3));
-  geometry.setIndex(part.mesh.indices);
-  geometry.computeVertexNormals();
+  const source = new THREE.BufferGeometry();
+  source.setAttribute('position', new THREE.Float32BufferAttribute(part.mesh.positions, 3));
+  source.setIndex(part.mesh.indices);
+  // Collision meshes can have inward-facing triangles. Correct the whole
+  // shell's winding, including cavity walls, on this renderer-owned copy.
+  const positions = source.attributes.position.array, indices = source.index.array;
+  let volume = 0;
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i] * 3, b = indices[i + 1] * 3, c = indices[i + 2] * 3;
+    volume += positions[a] * (positions[b + 1] * positions[c + 2] - positions[b + 2] * positions[c + 1])
+      + positions[a + 1] * (positions[b + 2] * positions[c] - positions[b] * positions[c + 2])
+      + positions[a + 2] * (positions[b] * positions[c + 1] - positions[b + 1] * positions[c]);
+  }
+  if (volume < 0) {
+    for (let i = 0; i < indices.length; i += 3) [indices[i + 1], indices[i + 2]] = [indices[i + 2], indices[i + 1]];
+  }
+  // Split normals at sharp brick edges while smoothing neighboring cylinder
+  // facets. Averaging every indexed face makes flat plates look inflated.
+  const geometry = toCreasedNormals(source, Math.PI / 6);
+  source.dispose();
   geometry.computeBoundingBox(); geometry.computeBoundingSphere();
   return geometry;
 }
@@ -184,9 +200,12 @@ export async function createModel(container, options = {}) {
   let records = [], pieces = [], progress = 0, selectedId = null, mode = 'build';
   let autoRotate = false, exploded = false, placement = null, validatePlacement = options.validatePlacement;
   let theta = -.53, targetTheta = -.53, phi = .40, targetPhi = .40, zoom = 1, targetZoom = 1;
+  let defaultTheta = -.53, defaultPhi = .4, piecesMoving = false;
   let cameraCenter = new THREE.Vector3(0, 2.7, 0), modelHeight = 6.3, modelWidth = 7, modelRadius = 4;
   let explodedHeight = 6.3, largeModel = false;
   const explodedCenter = new THREE.Vector3(0, 2.7, 0);
+  let framingBoxes = [], expandedFramingBoxes = [];
+  const framePoint = new THREE.Vector3(), frameOffset = new THREE.Vector3();
   const placementBounds = { minX: -8 * U, maxX: 8 * U, minZ: -8 * U, maxZ: 8 * U };
   let viewportWidth = 1, viewportHeight = 1, visible = false;
   let disposed = false, contextLost = false, needsFrame = true, raf = 0, lastTime = performance.now();
@@ -215,16 +234,25 @@ export async function createModel(container, options = {}) {
     if (!records.length) {
       cameraCenter.set(0, 2.7, 0); modelHeight = 6.3; modelWidth = 7; modelRadius = 4;
       explodedCenter.copy(cameraCenter); explodedHeight = modelHeight;
+      framingBoxes = []; expandedFramingBoxes = [];
       updateSceneBounds(new THREE.Box3(new THREE.Vector3(-3.5, 0, -3.5), new THREE.Vector3(3.5, 6.3, 3.5)));
       return;
     }
     const bounds = new THREE.Box3(), expandedBounds = new THREE.Box3();
+    const sections = new Map(), expandedSections = new Map();
+    const includeSection = (sections, box) => {
+      const level = Math.floor((box.min.y + box.max.y) / 10);
+      if (!sections.has(level)) sections.set(level, new THREE.Box3());
+      sections.get(level).union(box);
+    };
     for (const rec of records) {
       const local = rec.mesh.geometry.boundingBox.clone();
       const matrix = new THREE.Matrix4().compose(rec.base, rec.mesh.quaternion, rec.mesh.scale);
       local.applyMatrix4(matrix); bounds.union(local);
+      includeSection(sections, local);
       local.translate(new THREE.Vector3(0, finite(rec.spec.layer, 1) * .245, 0));
       expandedBounds.union(local);
+      includeSection(expandedSections, local);
     }
     const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
     const wideFrame = Math.max(size.x, size.y, size.z) > 10;
@@ -232,11 +260,14 @@ export async function createModel(container, options = {}) {
     cameraCenter.set(center.x, Math.max(1.6, bounds.min.y + size.y * .44), center.z);
     explodedHeight = Math.max(3, expandedBounds.max.y - expandedBounds.min.y);
     explodedCenter.set(center.x, Math.max(1.6, expandedBounds.min.y + explodedHeight * .44), center.z);
+    framingBoxes = [...sections.values()]; expandedFramingBoxes = [...expandedSections.values()];
     updateSceneBounds(bounds);
   }
   function updateSceneBounds(bounds) {
     const size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
     largeModel = Math.max(size.x, size.y, size.z) > 10;
+    const campus = size.x > size.y * 1.2 && size.z > size.y * .6;
+    defaultTheta = campus ? -.28 : -.53; defaultPhi = campus ? .47 : .4;
     placementBounds.minX = Math.min(-8 * U, bounds.min.x - 2 * U);
     placementBounds.maxX = Math.max(8 * U, bounds.max.x + 2 * U);
     placementBounds.minZ = Math.min(-8 * U, bounds.min.z - 2 * U);
@@ -244,6 +275,9 @@ export async function createModel(container, options = {}) {
     // Wide architectural models carry their own foundation rather than the
     // small circular display stand used by the original apple.
     base.visible = studs.visible = Math.max(size.x, size.z) <= 10;
+    const floorSpan = Math.max(100, size.x + size.y * 2, size.z + size.y * 2);
+    floor.scale.set(floorSpan / 100, floorSpan / 100, 1);
+    floor.position.x = center.x; floor.position.z = center.z;
     if (largeModel) {
       const radius = Math.max(8, size.length() * .6);
       const direction = new THREE.Vector3(-7, 13, 8).normalize();
@@ -261,13 +295,29 @@ export async function createModel(container, options = {}) {
     // Tall models can gain many scene units when their assembly layers spread.
     // Frame the expanded bounds, while preserving the original apple framing.
     const expanded = exploded && largeModel, height = expanded ? explodedHeight : modelHeight;
-    const framing = Math.max(8.3, height * 1.34, modelWidth / Math.max(largeModel ? .1 : .45, aspect) * 1.08);
-    camera.left = -framing * aspect / 2; camera.right = framing * aspect / 2; camera.top = framing / 2; camera.bottom = -framing / 2;
+    let framing = Math.max(8.3, height * 1.34, modelWidth / Math.max(largeModel ? .1 : .45, aspect) * 1.08);
     const target = (expanded ? explodedCenter : cameraCenter).clone(); if (exploded && !expanded) target.y += 1.1;
     const distance = Math.max(20, modelRadius * 3);
     camera.far = Math.max(150, distance + height + modelRadius * 2);
     camera.position.set(target.x + Math.sin(theta) * Math.cos(phi) * distance, target.y + Math.sin(phi) * distance, target.z + Math.cos(theta) * Math.cos(phi) * distance);
-    camera.lookAt(target); camera.zoom = zoom; camera.updateProjectionMatrix(); camera.updateMatrixWorld(true);
+    camera.lookAt(target); camera.updateMatrixWorld(true);
+    if (largeModel && framingBoxes.length) {
+      // A few cached height sections preserve the tower's visual scale without
+      // cropping a wide lake or courtyard. No per-brick work is needed on orbit.
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const box of expanded ? expandedFramingBoxes : framingBoxes) {
+        for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+          framePoint.set(x, y + MODEL_LIFT, z).applyMatrix4(camera.matrixWorldInverse);
+          minX = Math.min(minX, framePoint.x); maxX = Math.max(maxX, framePoint.x);
+          minY = Math.min(minY, framePoint.y); maxY = Math.max(maxY, framePoint.y);
+        }
+      }
+      framing = Math.max(8.3, (maxY - minY) * 1.1, (maxX - minX) / Math.max(.1, aspect) * 1.1);
+      frameOffset.set((minX + maxX) / 2, (minY + maxY) / 2, 0).applyQuaternion(camera.quaternion);
+      camera.position.add(frameOffset); camera.updateMatrixWorld(true);
+    }
+    camera.left = -framing * aspect / 2; camera.right = framing * aspect / 2; camera.top = framing / 2; camera.bottom = -framing / 2;
+    camera.zoom = zoom; camera.updateProjectionMatrix();
   }
   const resize = () => {
     const rect = container.getBoundingClientRect(); visible = rect.width > 0 && rect.height > 0;
@@ -342,13 +392,15 @@ export async function createModel(container, options = {}) {
       const ease = reducedMotion ? 1 : 1 - Math.pow(.002, dt);
       if (Math.abs(theta - targetTheta) + Math.abs(phi - targetPhi) + Math.abs(zoom - targetZoom) > .0001) moving = true;
       theta = THREE.MathUtils.lerp(theta, targetTheta, ease); phi = THREE.MathUtils.lerp(phi, targetPhi, ease); zoom = THREE.MathUtils.lerp(zoom, targetZoom, ease);
-      for (const rec of records) {
+      const updatePieces = piecesMoving;
+      piecesMoving = false;
+      if (updatePieces) for (const rec of records) {
         if (!rec.mesh.visible) continue;
         const explodeOffset = exploded ? finite(rec.spec.layer, 1) * .245 : 0;
         const targetY = rec.base.y + explodeOffset;
         if (Math.abs(rec.mesh.position.y - targetY) > .002) {
           rec.mesh.position.y = THREE.MathUtils.lerp(rec.mesh.position.y, targetY, Math.min(1, ease * 1.3));
-          renderer.shadowMap.needsUpdate = true; moving = true;
+          renderer.shadowMap.needsUpdate = true; moving = true; piecesMoving = true;
         } else if (rec.mesh.position.y !== targetY) {
           rec.mesh.position.y = targetY; renderer.shadowMap.needsUpdate = true; needsFrame = true;
         }
@@ -419,7 +471,7 @@ export async function createModel(container, options = {}) {
       for (const rec of records) { rec.mesh.visible = true; rec.mesh.position.y = rec.base.y; }
       selectionBox.visible = false; if (ghost) ghost.visible = false; if (ghostEdges) ghostEdges.visible = false;
       exploded = false; zoom = 1;
-      if (!poster) { theta = -.53; phi = .4; }
+      if (!poster) { theta = defaultTheta; phi = defaultPhi; }
       const sceneWidth = poster ? Math.round(size * 1.2) : size, sceneHeight = poster ? Math.round(size * .76) : size;
       renderer.setPixelRatio(1); renderer.setSize(sceneWidth, sceneHeight, false); updateCamera(sceneWidth / sceneHeight); modelGroup.updateMatrixWorld(true); renderer.shadowMap.needsUpdate = true; renderer.render(scene, camera);
       if (poster) {
@@ -469,7 +521,7 @@ export async function createModel(container, options = {}) {
       const center = bounds.getCenter(new THREE.Vector3()), extent = bounds.getSize(new THREE.Vector3());
       const distance = Math.max(20, extent.length() * 2);
       const thumbnailCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, .1, distance + extent.length() + 10);
-      thumbnailCamera.position.set(center.x + Math.sin(-.53) * Math.cos(.4) * distance, center.y + Math.sin(.4) * distance, center.z + Math.cos(-.53) * Math.cos(.4) * distance);
+      thumbnailCamera.position.set(center.x + Math.sin(defaultTheta) * Math.cos(defaultPhi) * distance, center.y + Math.sin(defaultPhi) * distance, center.z + Math.cos(defaultTheta) * Math.cos(defaultPhi) * distance);
       thumbnailCamera.lookAt(center); thumbnailCamera.updateMatrixWorld(true);
 
       // Fit the projected bounds of each brick rather than the whole model's
@@ -519,6 +571,7 @@ export async function createModel(container, options = {}) {
         records.push({ spec, mesh, base: new THREE.Vector3(spec.x, spec.y, spec.z), geometryKey: key });
       }
       progress = records.length;
+      piecesMoving = exploded;
       if (!records.some(r => sameId(r.spec.id, selectedId))) selectedId = null;
       updateBounds(); modelGroup.updateMatrixWorld(true); pruneGeometry(); updateSelection(); needsFrame = true;
       renderer.shadowMap.needsUpdate = true;
@@ -526,6 +579,7 @@ export async function createModel(container, options = {}) {
     setProgress(value, { animate = true } = {}) {
       if (disposed) return;
       const previous = progress; progress = clamp(Math.round(finite(value, records.length)), 0, records.length);
+      piecesMoving = false;
       records.forEach((rec, i) => {
         const visible = mode === 'edit' || i < progress;
         const newlyShown = visible && !rec.mesh.visible;
@@ -533,6 +587,7 @@ export async function createModel(container, options = {}) {
         const target = rec.base.y + (exploded ? rec.spec.layer * .245 : 0);
         if (newlyShown && animate && !reducedMotion && i === progress - 1 && progress > previous) rec.mesh.position.y = target + 1.75;
         else if (!animate || !visible || i !== progress - 1) rec.mesh.position.y = target;
+        if (visible && rec.mesh.position.y !== target) piecesMoving = true;
       });
       updateSelection(); renderer.shadowMap.needsUpdate = true; needsFrame = true;
     },
@@ -541,22 +596,23 @@ export async function createModel(container, options = {}) {
       if (mode === 'edit') { records.forEach(rec => { rec.mesh.visible = true; }); }
       else { placement = null; clearGhost(); records.forEach((rec, i) => { rec.mesh.visible = i < progress; }); }
       container.dataset.modelMode = mode; container.style.cursor = placement ? 'crosshair' : 'grab';
+      piecesMoving = true;
       updateSelection(); renderer.shadowMap.needsUpdate = true; needsFrame = true;
     },
     selectPiece(id) { selectedId = id; updateSelection(); needsFrame = true; },
     setPlacement(part, color = '#d86d47', rotationRadians = 0) {
       placement = part ? { part: { ...part }, color, rotation: finite(rotationRadians) } : null;
-      if (placement) { autoRotate = false; exploded = false; targetZoom = Math.min(targetZoom, 1.1); }
+      if (placement) { autoRotate = false; if (exploded) piecesMoving = true; exploded = false; targetZoom = Math.min(targetZoom, 1.1); }
       createGhost(); container.style.cursor = placement ? 'crosshair' : 'grab';
       delete container.dataset.placementValid;
       if (lastPointer && placement) placementAt(lastPointer.x, lastPointer.y);
       needsFrame = true;
     },
     setPlacementValidator(fn) { validatePlacement = typeof fn === 'function' ? fn : null; if (lastPointer && placement) placementAt(lastPointer.x, lastPointer.y); },
-    setExploded(value) { exploded = !!value; if (exploded) { placement = null; clearGhost(); container.style.cursor = 'grab'; delete container.dataset.placementValid; } targetZoom = exploded ? .76 : 1; needsFrame = true; },
+    setExploded(value) { exploded = !!value; piecesMoving = true; if (exploded) { placement = null; clearGhost(); container.style.cursor = 'grab'; delete container.dataset.placementValid; } targetZoom = exploded ? .76 : 1; needsFrame = true; },
     setAutoRotate(value) { autoRotate = !!value; needsFrame = true; },
     zoomBy(factor) { targetZoom = clamp(targetZoom * finite(factor, 1), .48, 2.4); needsFrame = true; },
-    resetView() { targetTheta = -.53; targetPhi = .4; targetZoom = exploded ? .76 : 1; needsFrame = true; },
+    resetView() { targetTheta = defaultTheta; targetPhi = defaultPhi; targetZoom = exploded ? .76 : 1; needsFrame = true; },
     async snapshot(exportOptions = {}) { const canvas = renderExport(1800, { ...exportOptions, poster: true }); return new Promise(resolve => canvas.toBlob(resolve, 'image/png')); },
     async thumbnail() { return renderExport(480, { poster: false }).toDataURL('image/jpeg', .84); },
     async progressThumbnail() { return renderProgressThumbnail(); },

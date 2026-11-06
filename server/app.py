@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
@@ -17,14 +19,16 @@ from .config import ROOT, Settings
 from .jobs import JobManager, ServiceError
 from .schemas import GenerationRequest
 from .parts import router as parts_router
+from .ai_settings import AISettings, ModelsRequest, SaveSettingsRequest
 
 LOGGER = logging.getLogger("brick_it")
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 
-def create_app(settings: Settings | None = None, *, manager: JobManager | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, manager: JobManager | None = None, env_path: Path | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
     manager = manager or JobManager(settings)
+    ai_settings = AISettings(manager, env_path)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -34,6 +38,7 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
 
     app = FastAPI(title="brick.it local generation", lifespan=lifespan)
     app.state.jobs = manager
+    app.state.ai_settings = ai_settings
     app.include_router(parts_router)
 
     @app.middleware("http")
@@ -82,7 +87,8 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request, exc):
-        return JSONResponse({"error": {"code": "INVALID_REQUEST", "message": "照片、提示词或生成选项无效，请检查后重试。"}}, status_code=422)
+        message = "API 地址、密钥或模型无效，请检查后重试。" if request.url.path.startswith("/api/ai/") else "照片、提示词或生成选项无效，请检查后重试。"
+        return JSONResponse({"error": {"code": "INVALID_REQUEST", "message": message}}, status_code=422)
 
     @app.get("/health")
     async def health():
@@ -90,18 +96,29 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
 
     @app.get("/ready")
     async def ready():
-        import asyncio
-        result = await asyncio.to_thread(settings.capabilities)
+        result = await asyncio.to_thread(manager.settings.capabilities)
         return JSONResponse(result, status_code=200 if result["available"] else 503)
 
     @app.get("/api/generation/capabilities")
     async def capabilities():
-        import asyncio
-        return await asyncio.to_thread(settings.capabilities)
+        return await asyncio.to_thread(manager.settings.capabilities)
+
+    @app.get("/api/ai/settings")
+    async def get_ai_settings():
+        return ai_settings.public()
+
+    @app.post("/api/ai/models")
+    async def list_ai_models(request: ModelsRequest):
+        return await ai_settings.models(request)
+
+    @app.post("/api/ai/settings")
+    async def save_ai_settings(request: SaveSettingsRequest):
+        return await ai_settings.save(request)
 
     @app.post("/api/generations", status_code=202)
     async def create_generation(request: GenerationRequest):
-        return await manager.create(request)
+        async with ai_settings.lock:
+            return await manager.create(request)
 
     @app.get("/api/generations/{job_id}")
     async def generation(job_id: str):

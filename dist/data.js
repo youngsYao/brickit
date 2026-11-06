@@ -130,8 +130,8 @@ function canonicalPartId(piece) {
   return findPart(exact)?.id || `${category}-${w}x${d}`;
 }
 
-/** Original apple geometry, with a separate identity and color on every brick. */
-export function createDefaultPieces() {
+/** Restore older saved works without advertising the retired apple example. */
+function createLegacyApplePieces() {
   const pieces = [];
   const radii = [2.75,3.5,4.0,4.45,4.75,4.85,4.8,4.4,3.65];
   for (let layer=0;layer<radii.length;layer++) {
@@ -161,17 +161,14 @@ export function createDefaultPieces() {
   pieces.push({x:2.05,y:6.11,z:-0.07,w:1,d:1,h:PLATE_HEIGHT,layer:10,type:'leaf',shape:'plate',rz:0.42,ry:-0.2,color:'#648a35'});
   return pieces.map((piece,index)=>({...piece,id:`apple-${String(index+1).padStart(3,'0')}`,partId:canonicalPartId(piece),ry:piece.ry||0,rz:piece.rz||0}));
 }
-export const DEFAULT_PIECES = Object.freeze(createDefaultPieces().map(Object.freeze));
-
 export const BUILTIN_EXAMPLES = Object.freeze([
-  Object.freeze({ id:'apple-example', title:'一颗苹果', description:'从第一块，到最后一片绿叶。', sourceImage:null, thumbnail:'./assets/example-preview.jpg' }),
   Object.freeze({ ...SONGEN_EXAMPLE, id:'songen-example', title:'厦大 · 颂恩楼', sourceImage:'./assets/songen-reference.jpg', thumbnail:'./assets/songen-preview.png' })
 ]);
 const builtinExampleIndex = new Map(BUILTIN_EXAMPLES.map(example => [example.id, example]));
-function createBuiltinPieces(id) { return id === 'songen-example' ? createSongenPieces() : createDefaultPieces(); }
+function createBuiltinPieces() { return createSongenPieces(); }
 
 /** Bundled examples work without the generation service or browser storage. */
-export function createExampleProject(exampleId = 'apple-example') {
+export function createExampleProject(exampleId = 'songen-example') {
   const example = builtinExampleIndex.get(exampleId);
   if (!example) throw new TypeError('没有找到这个内置示例。');
   const now=new Date().toISOString();
@@ -179,7 +176,7 @@ export function createExampleProject(exampleId = 'apple-example') {
   return {
     ...example, exampleId, source:'example',
     createdAt:now,updatedAt:now,favorite:false,version:1,
-    pieces,originalPieces:cloneProject(pieces),settings:{size:exampleId==='songen-example'?'large':'medium',style:'classic'}
+    pieces,originalPieces:cloneProject(pieces),settings:{size:'large',style:'classic'}
   };
 }
 export function cloneProject(project) {
@@ -195,6 +192,7 @@ export async function resolveOriginalPieces(project, getProject = id => library.
     if(Array.isArray(current.originalPieces))return cloneProject(current.originalPieces);
     const builtinId=[current.exampleId,current.rootId,current.id].find(id=>builtinExampleIndex.has(id));
     if(builtinId)return createBuiltinPieces(builtinId);
+    if([current.exampleId,current.rootId,current.id].includes('apple-example'))return createLegacyApplePieces();
     if(current.id&&visited.has(current.id))break;
     if(current.id)visited.add(current.id);
     if(!current.draft&&!current.parentId&&(!current.rootId||current.rootId===current.id))return cloneProject(current.pieces);

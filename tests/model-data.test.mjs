@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
-  CATALOG, UNIT, canPlace, cloneProject, createDefaultPieces, createExampleProject,
-  createPiece, findPart, getCatalog, inventoryFor, orderPieces, registerProjectParts,
+  CATALOG, UNIT, canPlace, cloneProject, createExampleProject,
+  createPiece, findPart, getCatalog, inventoryFor, orderPieces, registerProjectParts, resolveOriginalPieces,
 } from '../dist/data.js';
 
 const meshPart = (id = 'ldraw-3001') => ({
@@ -107,14 +107,16 @@ test('editing overlap and ground checks account for X rotation', () => {
   assert.equal(UNIT, .58);
 });
 
-test('legacy apple data and sample playback order remain unchanged', () => {
-  const pieces = createDefaultPieces();
+test('retired apple saved works retain their restoration data and playback order', async () => {
+  const pieces = await resolveOriginalPieces({ id:'saved-apple', rootId:'apple-example', source:'user', draft:true, pieces:[] });
   assert.equal(pieces.length, 115);
   assert.equal(createHash('sha256').update(JSON.stringify(pieces)).digest('hex'), 'de4ea63f5c36a3e0c8261c49058849ab47b992cd637dca1d4a61518db2208363');
   const legacyOrder = pieces.map((piece,index) => ({ piece,index,bottom: piece.y - piece.h / 2 }))
     .sort((a,b) => a.bottom-b.bottom || a.piece.y-b.piece.y || a.piece.z-b.piece.z || a.piece.x-b.piece.x || a.index-b.index)
     .map(({ piece }) => piece);
   assert.deepEqual(orderPieces(pieces), legacyOrder);
+  const ownBaseline = [{ ...pieces[0], color:'#ffffff' }];
+  assert.deepEqual(await resolveOriginalPieces({ id:'saved-apple', rootId:'apple-example', originalPieces:ownBaseline, pieces:[] }), ownBaseline);
   assert.doesNotThrow(() => registerProjectParts({ ...createExampleProject(), originalPieces: null }));
 });
 

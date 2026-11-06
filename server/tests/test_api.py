@@ -39,7 +39,7 @@ def test_missing_config_keeps_editor_available_and_generation_honest(settings):
     with TestClient(create_app(settings), base_url="http://localhost:4173") as client:
         capability = client.get("/api/generation/capabilities").json()
         assert capability["available"] is False
-        assert "BRICKWRIGHT_GENERATION_MODEL" in capability["reason"]
+        assert "右上角的 AI 模型设置" in capability["reason"]
         assert client.get("/").status_code == 200
         assert client.get("/assets/vendor/three.module.js").status_code == 200
         assert client.get("/health").json() == {"status": "ok"}

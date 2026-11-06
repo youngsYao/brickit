@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "uv run python -m server",
-    "check": "node --check dist/app.js && node --check dist/model.js && node --check dist/data.js && node --check dist/ui-art.js && node --check dist/icons.js && node --check dist/generation.js && node --check dist/parts-catalog.js && node --check dist/ldraw-preview.js && node --check dist/examples/songen.js",
+    "check": "node --check dist/app.js && node --check dist/model.js && node --check dist/data.js && node --check dist/ui-art.js && node --check dist/icons.js && node --check dist/generation.js && node --check dist/ai-settings.js && node --check dist/parts-catalog.js && node --check dist/ldraw-preview.js && node --check dist/examples/songen.js",
     "dev:static": "python3 -m http.server 4173 --directory dist",
     "test": "node --test tests/*.test.mjs",
     "test:backend": "uv run pytest server/tests -q",

@@ -10,6 +10,7 @@ dependencies = [
   "pillow>=11,<13",
   "brickwright",
   "bricklayer-sdk",
+  "mcp>=2.2,<3",
 ]
 
 [tool.uv.sources]

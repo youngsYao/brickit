@@ -1,12 +1,12 @@
 # brick.it
 
-一个以图片创作为入口的积木模型工作台。已接入官方 BrickWright / BrickLayer：照片 → AI 编写装配程序 → 几何校验 → 渲染与照片对照 → 反馈修正 → 导入三维工作台。生成需要在本地服务端配置模型 API Key 与 LDraw 零件库；未配置时仍可使用苹果示例、编辑和本地作品库，不会把示例伪装成生成结果。
+一个以图片创作为入口的积木模型工作台。已接入官方 BrickWright / BrickLayer：照片 → AI 编写装配程序 → 几何校验 → 渲染与照片对照 → 反馈修正 → 导入三维工作台。生成需要在本地服务端配置模型 API Key 与 LDraw 零件库；未配置时仍可使用颂恩楼示例、编辑和本地作品库，不会把示例伪装成生成结果。
 
 ## 已实现
 
 - 图片选择、拖放、预览与移除；手机拍照入口，以及支持设备上的相机拍摄与关闭释放。
 - 上传区使用与系统暖白、浅灰绿色调一致的积木信纸底图，以及原生 SVG 积木相机；底图无水印，整个底板都支持拖放图片。
-- 115 颗苹果积木逐颗拼装，上一块/下一块、播放暂停、速度、进度定位和阶段跳转。
+- 颂恩楼校园场景积木逐颗拼装，上一块/下一块、播放暂停、速度、进度定位和阶段跳转。
 - 独立的搭建 / 编辑模式；模型旋转、缩放、分层、当前积木高亮。
 - 工作台画布右侧工具栏提供 AI 生成图标，可返回图片上传 / 拍照页面，并保留当前模型和生成设置。
 - 自由编辑的撤销 / 重做位于画布左上角；选件、颜色、方向、删除、取消放置与模型还原由侧栏提供，画布底部不再保留编辑工具横条。
@@ -31,8 +31,8 @@ cp .env.example .env
 
 在 `.env` 中设置：
 
-- `BRICKWRIGHT_GENERATION_MODEL`：支持图像输入与工具调用的模型，使用 `openai/`、`anthropic/` 或 `gemini/` 前缀。
-- 对应服务商的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY` 或 `GEMINI_API_KEY`。
+- `BRICKWRIGHT_GENERATION_MODEL`：支持图像输入与工具调用的模型，使用 `openai/`、`anthropic/`、`gemini/` 或 `moonshot/` 前缀。
+- 对应服务商的 `OPENAI_API_KEY`、`ANTHROPIC_API_KEY`、`GEMINI_API_KEY` 或 `MOONSHOT_API_KEY`。
 - `LDRAW_LIBRARY_PATH`：可留空，默认使用 `~/.cache/brick-it/ldraw`；已有其他安装时可填其 `ldraw` 目录绝对路径。
 - `BRICK_IT_AUTO_DOWNLOAD_LDRAW`：默认 `true`，首次启动缺少零件库时自动下载固定版本。离线环境可设为 `false`。
 
@@ -47,6 +47,92 @@ npm run dev
 打开 [http://127.0.0.1:4173](http://127.0.0.1:4173)。生成服务和静态页面共用同一地址。点击“生成”后，照片会发送至配置的模型服务商。相机需要浏览器授权，并在 HTTPS 或 localhost 下使用；三维工作台需要 WebGL 2。
 
 只运行原有静态工作台可使用 `npm run dev:static`，此时生成入口会明确显示服务不可用。已有静态托管不会自动获得 Python 后端。
+
+### GPT-6 Astra / OpenAI 兼容接口
+
+将鼠标移到右上角的用户图标（触屏或键盘可点击打开），在“AI 模型设置”中填写 API 地址和 API Key，再获取模型列表并选择模型。支持 OpenAI 兼容服务；根地址会自动补齐 `/v1`，已有路径前缀与版本号会保留。列表读取使用服务商的 `GET /models`，不发起模型生成。
+
+保存后立即用于下一次生成，无需重启。密钥仅保存到本机 `.env`（权限 `0600`），不会返回浏览器；再次编辑时留空可保留已有密钥。有生成任务运行时，须等待完成或取消后才能更改设置。保存连接信息会保留原有预算、超时、流式输出和评审轮数配置。
+
+也可以在本地 `.env` 中设置模型、密钥和版本化接口地址：
+
+```dotenv
+BRICKWRIGHT_GENERATION_MODEL=openai/gpt-6-astra
+OPENAI_API_KEY=填写自己的密钥
+OPENAI_BASE_URL=https://cf.api.fan/v1
+OPENAI_API_BASE=https://cf.api.fan/v1
+OPENAI_STREAM=true
+BRICK_IT_MAX_COST=0
+BRICK_IT_JOB_TIMEOUT=0
+BRICK_IT_REQUEST_TIMEOUT=0
+BRICK_IT_MAX_TURNS=0
+BRICK_IT_MAX_VALIDATIONS=0
+BRICK_IT_MAX_CRITIQUE_ROUNDS=1
+```
+
+GPT-6 使用 Responses 接口；兼容服务须支持图像输入及函数工具调用。本项目安装匹配 LiteLLM 的 MCP 运行依赖，并在建模、视角选择和视觉评审中显式传递请求时限；`BRICK_IT_REQUEST_TIMEOUT=0` 会解除连接、读取、写入和连接池等待时限。取消任务时限也会解除装配及渲染时限，手动取消仍可用。
+
+`OPENAI_STREAM=true` 用于需要流式返回的兼容服务：完整聚合文字、工具参数和用量后才执行工具，中断或缺少结束事件的响应不会当作完成结果。该选项默认关闭。费用按 LiteLLM 模型价格表估算，第三方实际扣费以服务商账单为准。
+
+### Moonshot / Kimi
+
+使用中国区 Kimi 接口时，在本机 `.env` 中设置以下内容，并填写自己的密钥：
+
+```dotenv
+BRICKWRIGHT_GENERATION_MODEL=moonshot/kimi-k3.1-pro
+MOONSHOT_API_KEY=填写自己的密钥
+MOONSHOT_API_BASE=https://api.moonshot.cn/v1
+MOONSHOT_USD_PER_CNY=0.16
+MOONSHOT_MAX_OUTPUT_TOKENS=16384
+MOONSHOT_REASONING_EFFORT=low
+```
+
+接口地址会补齐 `/v1`。适配器保留图片、多轮工具调用与推理上下文，使用模型支持的推理强度及输出上限；生成、观察角度选择和视觉评审都通过同一适配器调用。推理强度可选 `low`、`high`、`max`，未设置时使用 `high`；快速测试可先用 `low`。复杂装配程序可能超过默认两分钟响应等待，可将 `BRICK_IT_REQUEST_TIMEOUT` 调整至 `180` 秒，任务总时限仍独立生效。
+
+按 [Kimi 中国区官方定价](https://platform.kimi.com/docs/pricing/chat)，`kimi-k3.1-pro` 每百万 token 的非缓存输入为 ¥13、缓存命中为 ¥1.30、输出（含推理）为 ¥68，使用默认 5 分钟缓存。`MOONSHOT_USD_PER_CNY` 是供项目美元预算使用的显式折算系数；示例 `0.16` 表示按每人民币 0.16 美元估算，并非实时汇率或服务商美元报价。报告同时保留人民币费用与折算依据。请根据预算需要调整；中国区与国际区价格不能直接混用。
+
+模型费用在响应后累计，最后一次调用仍可能超过预算。密钥只由本地 Python 服务读取，勿填入前端代码或提交至 Git。
+
+[中国区 Tier0 限额](https://platform.kimi.com/docs/pricing/limits)为每分钟 3 次请求，连续工具调用可能触发限流。适配器仅对可恢复的 429 错误最多重试两次，遵循不超过 60 秒的 `Retry-After`，否则按 30 / 60 秒退避；欠费、日配额耗尽或要求等待更久时明确停止。超时或连接中断的潜在费用标为未知，保留已确认的费用，不会显示为免费请求。
+
+需要充分迭代的质量测试时，可显式设置以下选项。`0` 或 `unlimited` 表示取消对应上限；默认配置仍有预算和时限。取消任务时限还会取消装配执行和渲染工具的超时；手动取消仍会终止整个生成进程组。
+
+```dotenv
+BRICK_IT_MAX_COST=0
+BRICK_IT_JOB_TIMEOUT=0
+BRICK_IT_REQUEST_TIMEOUT=0
+BRICK_IT_MAX_TURNS=0
+BRICK_IT_MAX_VALIDATIONS=0
+BRICK_IT_MAX_CRITIQUE_ROUNDS=1
+BRICK_IT_MAX_VIEWPOINT_ITERATIONS=6
+MOONSHOT_REASONING_EFFORT=max
+MOONSHOT_MAX_OUTPUT_TOKENS=131072
+MOONSHOT_STREAM=true
+```
+
+费用仍会累计记录；人民币单价与美元折算仍需配置。服务商的限流、余额和上下文窗口仍由其接口决定。`max` 用于建模、视角选择和视觉评审的全部调用。生成报告中的 `generationSettings` 记录实际参数，未限制的预算和超时使用 JSON `null`。
+
+视觉修改最多一轮：完成首次模型后评审一次，如有建议则修改一次，并渲染、校验最终结果后输出，不再发起第二轮视觉评审。旧配置中更高的 `BRICK_IT_MAX_CRITIQUE_ROUNDS` 也会限制为 `1`，报告记录实际值。结构校验及修复仍可执行多次，费用、请求和任务时限可继续保持无限制。
+
+`MOONSHOT_STREAM=true` 按 [Kimi 流式协议](https://platform.kimi.com/docs/guide/utilize-the-streaming-output-feature-of-kimi-api)持续接收长响应，完整保留工具调用与推理上下文；收到结束标记、完整工具参数和服务商真实用量后才执行工具。私有进度文件只记录收到的数据计数与时间，不对外展示模型推理。
+
+无预算模式下，暂时性 HTTP 500 / 502 / 503 / 504 最多自动重试两次，按 30 / 60 秒退避。失败请求是否计费无法确认时，总费用保持未知，并单独保留已确认费用；默认有限预算模式仍会停止，避免越过预算继续调用。
+
+预算、任务时限和请求时限全部显式取消时，限流响应中明确给出的较长 `Retry-After` 也会完整等待，随后自动继续，不再受默认 60 秒重试等待窗口限制；等待期间可以取消任务。服务商明确报告账户余额或额度不足时仍停止。
+
+中断后可从已有装配程序与完整私有对话继续，避免重复目录查询：
+
+```sh
+uv run python scripts/resume_generation.py 原任务ID
+# 附加本地校验诊断及预览，原始模型和照片仍保留
+uv run python scripts/resume_generation.py 原任务ID --feedback-file /path/to/feedback.txt --feedback-image /path/to/diagnostic.png
+# 已完成的查询使上下文过长时，只携带原始任务、最新程序及诊断重新进入建模
+uv run python scripts/resume_generation.py 原任务ID --fresh-context --feedback-file /path/to/feedback.txt
+```
+
+恢复会创建新任务，保留原任务记录，只接受相同照片、提示词和生成选项；新任务沿用当前 `.env` 中的模型与运行参数。网页可通过通常的任务接口查看新 ID、下载最终产物或取消。私有检查点包含照片及模型上下文，存于已忽略的任务目录，且不会写入密钥。新报告以 `resumedFrom` 标识来源，各段费用分别记录。
+
+`--fresh-context` 不删除旧对话或改变模型思考强度，只将已完成的工具历史从新请求中移出，减少反复占用服务商的 token 配额；最新装配程序、原始照片和任务要求仍保留。`MOONSHOT_MAX_OUTPUT_TOKENS` 是单次响应的输出额度，可按阶段调整，不是整轮任务的费用或耗时上限。
 
 ## LDraw 零件仓库
 
@@ -82,8 +168,8 @@ npm run setup:ldraw -- --destination /path/to/ldraw --archive /path/to/ldraw-com
 1. 浏览器缩小并上传图片，可附加提示词、模型大小和风格。
 2. 本地服务保存任务，启动可终止的独立生成进程，使用官方 `run_agent()`。
 3. AI 使用真实目录零件编写 `build.py`，根据 `validate()` 返回的错误修正结构。
-4. 开启两轮视觉评审：多视角渲染、匹配参考观察角度、对照照片并反馈修改。
-5. `finalize()` 后重新读取实际导出的 LDraw 文件，独立强制检查：非空、件数上限、无碰撞、无悬空、单一连接组件。未完成、预算耗尽、费用未知或校验失败均不导入。
+4. 最多一轮视觉评审：多视角渲染、匹配参考观察角度、对照照片并反馈一次修改建议；修改完成后重新渲染并输出，不再开启第二轮评审。
+5. `finalize()` 后重新读取实际导出的 LDraw 文件，独立强制检查：非空、件数上限、无碰撞、无悬空、单一连接组件。未完成、预算耗尽、成功响应缺少费用记录或校验失败均不导入。
 6. 真实零件网格和完整 XYZ 姿态转换成工作台数据，保留原图、原始模型、来源信息及检查报告。每种零件网格只保存一份。
 
 小 / 中 / 大模型最多分别为 80 / 250 / 600 件。默认每任务预算 1 美元、最长 15 分钟，可通过 `.env` 调整。费用在模型响应后统计，最后一次调用可能略超预算；取消无法撤销已经产生的模型费用。
@@ -95,6 +181,9 @@ npm run setup:ldraw -- --destination /path/to/ldraw --archive /path/to/ldraw-com
 | 请求 | 用途 |
 | --- | --- |
 | `GET /api/generation/capabilities` | 模型、密钥及渲染依赖是否就绪，不返回密钥 |
+| `GET /api/ai/settings` | 当前 OpenAI 兼容地址、模型和密钥是否已配置，不返回密钥 |
+| `POST /api/ai/models` | 用 `{baseUrl, apiKey?}` 获取服务商模型列表，空密钥复用已存密钥 |
+| `POST /api/ai/settings` | 保存 `{baseUrl, apiKey?, model}`，下一次生成立即生效 |
 | `POST /api/generations` | 提交 `{image, prompt, size, style}`，返回任务 ID |
 | `GET /api/generations/{id}` | 轮询阶段、消息与完成后的 Project |
 | `DELETE /api/generations/{id}` | 取消任务并终止生成进程组 |

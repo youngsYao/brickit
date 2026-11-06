@@ -6,7 +6,7 @@
 const U = .58, H = .56;
 export const SONGEN_EXAMPLE = Object.freeze({
   id: 'songen-example', title: '厦大 · 颂恩楼',
-  description: '红瓦飞檐、拱形蓝窗与芙蓉湖畔的嘉庚建筑。',
+  description: '颂恩楼、嘉庚楼群与芙蓉湖畔的校园一景。',
   sourceImage: './assets/songen-reference.jpg', thumbnail: './assets/songen-preview.png',
 });
 
@@ -78,7 +78,7 @@ export function createSongenPieces() {
   }
   function roof(cx,cz,w,d,y,levels,type='roof') {
     // Terraced hip roof: red tile courses, dark projecting eaves, raised corners.
-    band(cx,cz,w+1,d+1,y,C.dark,.19,'eaves');
+    band(cx,cz,w+1,d+1,y,C.dark,.19,type.startsWith('campus-')?'campus-eaves':'eaves');
     for(let level=0;level<levels;level++) {
       const ww=w-level*1.1,dd=d-level*.85;
       band(cx,cz,ww,dd,y+.19+level*.32,level%3===1?C.roofAlt:C.roof,.33,type);
@@ -86,21 +86,54 @@ export function createSongenPieces() {
     const topW=w-(levels-1)*1.1,topD=d-(levels-1)*.85;
     course(cx,cz,topW,topD,y+.19+levels*.32,C.roof,type,.19,4,false);
     for(const sx of [-1,1]) for(const sz of [-1,1]) {
-      add(2,1,.19,cx+sx*(w/2-.6),y+.18,cz+sz*(d/2-.25),C.dark,'upturned-eave',{rz:sx*.13});
+      add(2,1,.19,cx+sx*(w/2-.6),y+.18,cz+sz*(d/2-.25),C.dark,type.startsWith('campus-')?'campus-upturned-eave':'upturned-eave',{rz:sx*.13});
     }
   }
 
-  // Exhibition plinth, granite square, and a sliver of Furong Lake.
-  course(0,1,44,34,0,C.dark,'base',.28,6,false,6);
-  course(0,-1,42,28,.28,C.shade,'base',.28,6,false,6);
-  for(let x=-20;x<20;x+=4) for(let z=-14;z<12;z+=4) {
-    add(4,Math.min(4,12-z),.19,x+2,.56,z+Math.min(4,12-z)/2,
-      (x+z)%8===0?'#c9c5b9':'#d9d5c9','plaza',{studs:false});
+  // A broad campus diorama: the tower stays on the central axis, four flanking
+  // buildings sit on the landward side, and Furong Lake occupies the foreground.
+  course(0,8,104,76,0,C.dark,'base',.28,8,false,8);
+  course(0,-7,100,42,.28,C.shade,'base',.28,8,false,6);
+  for(let x=-50;x<50;x+=5) for(let z=-28;z<14;z+=6) {
+    const d=Math.min(6,14-z);
+    add(5,d,.19,x+2.5,.56,z+d/2,
+      (x+z)%3===0?'#c9c5b9':'#d9d5c9','plaza',{studs:false});
   }
-  for(let x=-21;x<21;x+=3) add(3,5,.13,x+1.5,.56,14.5,C.water,'lake',{studs:false});
-  for(let x=-20;x<20;x+=4) add(4,.6,.19,x+2,.69,11.9,C.light,'lakeside',{studs:false});
-  for(const [x,z,len] of [[-13,14,4],[8,15,5],[-3,13.3,3],[15,13.1,2]])
-    add(len,.12,.04,x,.70,z,'#a3c4be','water-ripple',{studs:false});
+  const shoreAt=x=>14+Math.max(0,Math.abs(x)-28)*.36;
+  // Brick-tiled water changes gently in tone toward the near bank. A stepped
+  // planted shore softens the rectangular display base without hiding the lake.
+  // Keep overlapping landscape surfaces on distinct levels: inset lawn .66,
+  // shore .72, plaza .75, inlaid paths .775, and promenade .80. Coplanar tops
+  // otherwise compete in the depth buffer and flash white as the camera moves.
+  for(let x=-50;x<50;x+=4) for(let z=14;z<44;z+=4) {
+    const w=Math.min(4,50-x),d=Math.min(4,44-z),cx=x+w/2,cz=z+d/2;
+    if(cz<shoreAt(cx)) {
+      add(w,d,.38,cx,.28,cz,'#829462','lakeside-lawn',{shape:'plate',studs:false});
+    } else {
+      const shade=z>32?'#4f8991':(x+z)%12===0?'#699fa3':'#5b959c';
+      add(w,d,.19,cx,.28,cz,shade,'lake',{studs:false});
+    }
+  }
+  for(let x=-48;x<48;x+=4) {
+    const z=shoreAt(x+2);
+    add(4,1.2,.27,x+2,.45,z,C.light,'shoreline',{studs:false});
+    add(4,2,.19,x+2,.61,z-1.6,C.trim,'promenade',{studs:false});
+  }
+  // Shallow granite steps lead down from the entrance square toward the water.
+  for(let i=0;i<3;i++) add(18-i*2,1.2,.13,0,.56-i*.08,13.2+i*.9,C.light,'lakeside-stairs',{studs:false});
+  for(const side of [-1,1]) {
+    add(1,37,.19,side*16.6,.585,-6.5,C.light,'axial-path',{studs:false});
+    add(14,1,.19,side*25,.585,10,C.light,'cross-path',{studs:false});
+  }
+  // Broken, muted strips suggest the tower's reflection, rather than a second
+  // building on the lake. They remain ordinary, editable smooth tiles.
+  for(let row=0;row<11;row++) {
+    const z=16.7+row*1.65,w=8.5-row*.36,offset=Math.sin(row*2.3)*.6;
+    add(w,.65,.04,offset,.475,z,row<2?'#8faeaa':'#739b9f','lake-reflection',{studs:false});
+    if(row%2===0) add(2.6,.3,.04,offset+1.2,.48,z+.55,'#8eb0ad','lake-reflection',{studs:false});
+  }
+  for(const [x,z,len] of [[-29,24,5],[19,32,7],[-20,38,4],[32,25,3],[9,41,6],[-7,29,3]])
+    add(len,.16,.04,x,.48,z,'#93b9b6','water-ripple',{studs:false});
 
   const ground=.75;
   // Podium walls: red granite body and pale, rusticated corner piers.
@@ -236,31 +269,94 @@ export function createSongenPieces() {
   add(.14,.14,2.5,0,ridge+.5,0,C.shade,'antenna',{studs:false});
   add(.65,.25,.72,0,neck+2,6.52,C.shade,'roof-plaque',{studs:false});
 
-  // Low red connecting wings, hedges, benches and a row of lakeside trees.
-  for(const side of [-1,1]) {
-    for(let row=0;row<3;row++) course(side*17,-2,8,7,ground+row*H,C.stone,'wing');
-    add(8,7,.19,side*17,ground+1.68,-2,C.red,'wing-roof');
-    for(let col=0;col<4;col++) pane(side*17+col*1.7-2.55,1.6,ground+.35,.8,.9,0,C.blue,'wing-window');
-    for(const z of [-10,8.6]) {
-      add(6,2,.22,side*16.5,.75,z,C.light,'planter');
-      add(5.5,1.5,.42,side*16.5,.97,z,C.green,'hedge',{shape:'plate'});
+  // Four surrounding blocks interpret the campus wings visible in the source
+  // photograph. The unseen plans and rear elevations are deliberately inferred.
+  function campusBuilding(cx,cz,floors,outer=false) {
+    const w=13,d=18,storey=1.56;
+    band(cx,cz,w+1,d+1,ground,C.shade,.22,'campus-foundation');
+    for(let f=0;f<floors;f++) {
+      const y=ground+.22+f*storey;
+      for(const sx of [-1,1]) for(const sz of [-1,1]) for(let row=0;row<2;row++)
+        add(2,2,storey/2,cx+sx*(w/2-1),y+row*storey/2,cz+sz*(d/2-1),C.stone,'campus-corner');
+      for(const face of [-1,1]) {
+        for(const side of [-1,1]) add(4.5,1,storey,cx+side*2.25,y,cz+face*8.35,
+          f===0?C.red:'#ba6957','campus-wall',{studs:false});
+        for(let col=0;col<6;col++) pane(cx+(col-2.5)*1.6,cz+face*9.04,y+.35,.88,.83,0,
+          (col+f)%4===0?C.pale:C.blue,'campus-window');
+        add(10,.65,.19,cx,y+storey-.19,cz+face*9.10,C.light,'campus-floor',{studs:false});
+        for(let col=0;col<=6;col++) add(.35,.45,storey,cx+(col-3)*1.6,y,cz+face*9.12,C.stone,'campus-pier',{studs:false});
+      }
+      for(const side of [-1,1]) {
+        add(.7,14,storey,cx+side*6.1,y,cz,C.stone,'campus-side-wall',{studs:false});
+        for(let col=0;col<7;col++) pane(cx+side*6.55,cz+(col-3)*2,y+.35,.85,.83,1,
+          (col+f)%3===0?C.glass:C.blue,'campus-side-window');
+        add(.6,16,.19,cx+side*6.55,y+storey-.19,cz,C.light,'campus-side-floor',{studs:false});
+      }
     }
-    for(const x of [13.4,18.8]) {
-      add(2.5,2.5,.25,side*x,.75,7,C.light,'tree-planter');
-      add(.55,.55,1.4,side*x,1,7,C.earth,'tree-trunk',{shape:'round',studs:false});
-      add(3.5,3,.56,side*x,2,7,C.green,'tree-crown',{shape:'plate'});
-      add(2.7,2.7,.56,side*x,2.56,7,C.leaf,'tree-crown',{shape:'plate'});
-      add(1.8,2,.38,side*x+.3,3.12,7,C.green,'tree-crown',{shape:'plate'});
+    const top=ground+.22+floors*storey;
+    band(cx,cz,w+1,d+1,top,C.light,.28,'campus-cornice');
+    // An arched front light set into a terracotta stepped gable is the
+    // characteristic motif visible on the flanking buildings in the photo.
+    const archBase=top+.28;
+    for(let row=0;row<5;row++) {
+      const span=row<3?13:row===3?11:9;
+      for(const side of [-1,1]) add((span-6)/2,1,H,cx+side*(3+(span-6)/4),
+        archBase+row*H,cz+8.55,C.red,'campus-gable');
+      add(span,1,H,cx,archBase+row*H,cz-8.5,C.red,'campus-rear-gable');
     }
-    add(3,1,.19,side*9.5,1.05,10.2,C.earth,'bench');
-    for(const offset of [-.9,.9]) add(.4,.7,.3,side*9.5+offset,.75,10.2,C.dark,'bench-leg',{studs:false});
+    archedGlass(cx,cz+9.12,archBase+.15,6,2.42,'campus-arch');
+    for(let col=-3;col<=3;col++) {
+      const r=3*U,topArc=archBase+.15+2.42-r+Math.sqrt(Math.max(0,r*r-(col*U)**2))+.14;
+      if(topArc<archBase+2.8) add(1,1,archBase+2.8-topArc,cx+col,topArc,cz+8.55,C.red,'campus-arch-spandrel',{studs:false});
+    }
+    for(const side of [-1,1]) add(1,16,2.24,cx+side*5.9,archBase,cz,C.stone,'campus-upper-side');
+    roof(cx,cz,outer?14:13.6,18.8,archBase+2.8,4,'campus-roof');
+    for(const side of [-1,1]) add(1.2,1.2,.84,cx+side*5.5,archBase+3.3,cz+6.7,C.red,'campus-roof-finial');
   }
-  // Two tiny black swans echo the supplied lakeside photograph.
-  for(const [x,z] of [[-4,14.7],[1,15.4]]) {
-    add(1.6,1,.38,x,.69,z,'#353d3c','swan',{shape:'round',studs:false});
-    add(.25,.3,.83,x+.65,.78,z,'#353d3c','swan-neck',{studs:false,rz:-.18});
-    add(.42,.35,.23,x+.49,1.48,z,'#353d3c','swan-head',{studs:false});
-    add(.22,.22,.13,x+.22,1.45,z,'#b65542','swan-beak',{studs:false});
+  for(const side of [-1,1]) {
+    campusBuilding(side*25.5,-1,5);
+    campusBuilding(side*42,-6,6,true);
+    // Low colonnaded links leave the taller buildings visually separate.
+    const cx=side*16.5;
+    add(7,5,.19,cx,2.4,-7,C.red,'campus-link-roof');
+    for(const dx of [-2.5,0,2.5]) add(.7,.7,1.65,cx+dx,ground,-4.9,C.light,'campus-colonnade');
+    add(7,1,1.65,cx,ground,-9,C.stone,'campus-link-wall');
+  }
+  function tree(x,z,index=0) {
+    const lift=index%3*.16;
+    // Extend the foundation into the inset lawn; its visible top stays at .97.
+    add(2.5,2.5,.31,x,.66,z,C.light,'tree-planter',{shape:'tile',studs:false});
+    add(.5,.5,1.65+lift,x,.97,z,C.earth,'tree-trunk',{shape:'round',studs:false});
+    add(3.7,3.2,.56,x,2.10+lift,z,index%4===0?'#8c9550':C.green,'tree-crown',{shape:'plate'});
+    add(3,2.8,.56,x+.2,2.66+lift,z,C.leaf,'tree-crown',{shape:'plate'});
+    add(2,2,.38,x-.15,3.22+lift,z,C.green,'tree-crown',{shape:'plate'});
+  }
+  for(const side of [-1,1]) {
+    for(const [index,x] of [11,18,25,34,43,48].entries()) tree(side*x,shoreAt(x)-3.9,index);
+    for(const [index,x] of [17,34,46].entries()) tree(side*x,-21,index+1);
+    for(const x of [16,31,44]) {
+      const z=shoreAt(x)-3.5;
+      add(5,1.8,.31,side*x,.66,z,C.light,'planter',{shape:'tile',studs:false});
+      add(4.5,1.3,.38,side*x,.97,z,C.green,'hedge',{shape:'plate'});
+    }
+    for(const x of [9,21,37]) {
+      const z=shoreAt(x)-1.5;
+      add(3,1,.19,side*x,1.05,z,C.earth,'bench');
+      for(const offset of [-.9,.9]) add(.4,.7,.3,side*x+offset,.75,z,C.dark,'bench-leg',{studs:false});
+    }
+    for(const x of [6.8,30.5,46.5]) {
+      const z=shoreAt(x)-1.6;
+      add(.25,.25,1.6,side*x,.75,z,C.dark,'path-light',{studs:false});
+      add(.65,.65,.19,side*x,2.35,z,C.light,'path-light',{studs:false});
+    }
+  }
+  // Foreground swans echo the reference photograph and give the lake scale.
+  for(const [x,z] of [[-7,32.5],[1,36]]) {
+    add(2.2,1.4,.38,x,.48,z,'#353d3c','swan',{shape:'round',studs:false});
+    add(.3,.35,1.15,x+.87,.65,z,'#353d3c','swan-neck',{studs:false,rz:-.18});
+    add(.55,.45,.25,x+.65,1.66,z,'#353d3c','swan-head',{studs:false});
+    add(.28,.25,.15,x+.29,1.6,z,'#b65542','swan-beak',{studs:false});
+    add(3.6,.13,.04,x-.4,.48,z+1.1,'#93b9b6','water-ripple',{studs:false});
   }
   return pieces;
 }

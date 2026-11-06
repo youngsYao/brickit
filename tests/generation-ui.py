@@ -9,8 +9,11 @@ No AI credentials, paid model calls, external services, or browser downloads.
 
 import argparse
 import copy
+import csv
 import json
 import os
+from collections import Counter
+from io import StringIO
 from pathlib import Path
 import time
 from functools import partial
@@ -140,10 +143,10 @@ class ApiFixture:
 
 
 def upload(page):
-    image = page.request.get("/assets/example-preview.jpg")
+    image = page.request.get("/assets/songen-preview.png")
     assert image.ok, "The reference photo fixture is available"
     page.locator("#image-input").set_input_files({
-        "name": "generation-test.jpg", "mimeType": "image/jpeg", "buffer": image.body(),
+        "name": "generation-test.png", "mimeType": "image/png", "buffer": image.body(),
     })
     expect(page.locator("#source-preview.has-image .source-image")).to_be_visible()
 
@@ -156,6 +159,15 @@ def ready(page, base_url):
 def assert_no_import(page):
     assert page.evaluate("window.brickit.project") is None, "An unfinished/failed job must not import a project"
     assert page.locator("#page-create").is_visible(), "An unfinished job keeps the photo workflow available"
+
+
+def assert_same_pieces(actual, expected, message):
+    """Display order can change; every field of each stable piece must survive."""
+    actual_by_id = {piece["id"]: piece for piece in actual}
+    expected_by_id = {piece["id"]: piece for piece in expected}
+    assert len(actual_by_id) == len(actual), "Imported piece IDs remain unique"
+    assert len(expected_by_id) == len(expected), "Fixture piece IDs are unique"
+    assert actual_by_id == expected_by_id, message
 
 
 def test_success(page, fixture, base_url, checks):
@@ -191,9 +203,10 @@ def test_success(page, fixture, base_url, checks):
     page.wait_for_function("window.brickit.project?.id === 'generated-ui-fixture'", timeout=20000)
     expect(page.locator("#stage[data-ready='true']")).to_be_visible(timeout=20000)
     imported = page.evaluate("window.brickit.project")
-    assert imported["pieces"] == fixture_project()["pieces"], "Official poses and piece metadata survive import"
-    assert imported["parts"] == fixture_project()["parts"], "Official part meshes survive import"
-    assert imported["originalPieces"] == fixture_project()["originalPieces"], "The generated baseline survives import"
+    expected = fixture_project()
+    assert_same_pieces(imported["pieces"], expected["pieces"], "Official poses and piece metadata survive import")
+    assert imported["parts"] == expected["parts"], "Official part meshes survive import"
+    assert_same_pieces(imported["originalPieces"], expected["originalPieces"], "The generated baseline survives import")
     assert imported["generation"]["validation"]["ok"] is True, "Backend validation report survives import"
     assert imported["generation"]["artifacts"]["ldraw"].endswith("/ldraw"), "The original LDraw remains downloadable"
     assert page.evaluate("window.brickit.state.engine.count") == len(imported["pieces"]), "The renderer loads the generated piece count"
@@ -202,8 +215,15 @@ def test_success(page, fixture, base_url, checks):
 
     with page.expect_download() as download:
         page.locator("[data-action='export-parts']").click()
-    csv = Path(download.value.path()).read_text(encoding="utf-8-sig")
-    assert "3001" in csv and "brick-2x4" not in csv, "Parts export preserves official IDs"
+    csv_text = Path(download.value.path()).read_text(encoding="utf-8-sig")
+    rows = list(csv.reader(StringIO(csv_text)))
+    header = next(index for index, row in enumerate(rows) if row and row[0] == "零件编号")
+    actual_counts = Counter()
+    for row in rows[header + 1:]:
+        if row and row[0] != "总计":
+            actual_counts[row[0]] += int(row[4])
+    expected_counts = Counter(str(piece["ldrawId"]) for piece in expected["pieces"])
+    assert actual_counts == expected_counts, "Parts export preserves every official ID and quantity"
     checks.append("零件CSV保留官方编号，不改写成示例零件编号")
 
     page.locator("[data-action='save']").first.click()
@@ -213,7 +233,11 @@ def test_success(page, fixture, base_url, checks):
     page.wait_for_function("window.brickit.project?.id === 'generated-ui-fixture'", timeout=20000)
     restored = page.evaluate("window.brickit.project")
     for key in ("parts", "pieces", "originalPieces", "generation"):
-        assert restored[key] == imported[key], f"{key} survives persistence and a browser reload"
+        message = f"{key} survives persistence and a browser reload"
+        if key in ("pieces", "originalPieces"):
+            assert_same_pieces(restored[key], imported[key], message)
+        else:
+            assert restored[key] == imported[key], message
     checks.append("生成作品保存及页面重载保留完整网格与生成记录")
 
     expect(page.locator("[data-action='export-ldraw']")).to_be_enabled()
@@ -286,9 +310,9 @@ def test_unavailable(page, fixture, base_url, checks):
     assert len(fixture.posts) == 0, "An unavailable backend does not start a job"
     assert_no_import(page)
     page.locator("[data-action='open-example']").first.click()
-    page.wait_for_function("window.brickit.project?.id === 'apple-example'")
+    page.wait_for_function("window.brickit.project?.id === 'songen-example'")
     expect(page.locator("#stage[data-ready='true']")).to_be_visible(timeout=20000)
-    checks.append("服务未配置时明确说明原因、不会假生成，苹果示例仍可使用")
+    checks.append("服务未配置时明确说明原因、不会假生成，颂恩楼示例仍可使用")
 
 
 def test_network_error(page, fixture, base_url, checks):

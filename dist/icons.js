@@ -13,7 +13,7 @@ export const ICON_ASSETS = Object.freeze({
   'arrow-counter-clockwise':'undo', 'arrow-clockwise':'redo', undo:'undo', redo:'redo',
   'rotate-brick':'rotate-brick', restart:'restart', restore:'restore',
   trash:'trash', 'check-circle':'success', info:'info', 'warning-circle':'warning',
-  'download-simple':'download', 'list-bullets':'list'
+  'download-simple':'download', 'list-bullets':'list', user:'user'
 });
 
 function source(name) {
