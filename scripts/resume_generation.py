@@ -18,7 +18,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from server.config import Settings
-from server.jobs import JobManager
+from server.jobs import JobManager, REFERENCE_ARTIFACTS
 from server.storage import TERMINAL, atomic_json, now
 
 
@@ -33,7 +33,9 @@ async def resume(job_id: str, feedback_file: Path | None = None, feedback_image:
     new_id = uuid.uuid4().hex
     destination = manager.store.path(new_id)
     destination.mkdir(mode=0o700)
-    shutil.copyfile(source / "input.png", destination / "input.png")
+    for filename in ("input.png", *REFERENCE_ARTIFACTS):
+        if (source / filename).is_file():
+            shutil.copyfile(source / filename, destination / filename)
     atomic_json(destination / "request.json", request)
     atomic_json(destination / "resume.json", {"jobId": job_id, "freshContext": fresh_context})
     if feedback_file is not None:

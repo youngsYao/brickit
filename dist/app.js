@@ -1,9 +1,9 @@
-import { CATALOG, getCatalog, registerProjectParts, COLOR_OPTIONS, UNIT, findPart, createExampleProject, BUILTIN_EXAMPLES, cloneProject, createPiece, inventoryFor, orderPieces, canPlace, library, resolveOriginalPieces } from './data.js';
+import { CATALOG, getCatalog, registerProjectParts, COLOR_OPTIONS, UNIT, findPart, loadExampleProject, BUILTIN_EXAMPLES, cloneProject, createPiece, inventoryFor, orderPieces, canPlace, library, resolveOriginalPieces } from './data.js';
 import { cameraIllustration, colorSwatch, rotationChoices } from './ui-art.js';
 import { icon, updateIcon } from './icons.js';
 import { generationApi } from './generation.js';
 import { createPartsCatalog, fetchLDrawPart } from './parts-catalog.js';
-import { initializeAiSettings } from './ai-settings.js';
+import { initializeAiSettings } from './ai-settings.js?v=2';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -17,9 +17,10 @@ let previewVersion=0,projectOpenVersion=0,progressPreviewVersion=0;
 const progressPreviewCache=new Map();
 const generation={capabilities:null,job:null,starting:false,controller:null,disconnected:false,importing:false,pollFailures:0};
 const activeJobKey='brickit-generation-job';
-const activeStatuses=new Set(['queued','generating','validating','rendering']);
-const generationStages=[['queued','等待开始'],['generating','识别图片与装配模型'],['validating','检查碰撞、悬空与连接'],['rendering','对照图片并调整外观'],['completed','导入积木工作台']];
+const activeStatuses=new Set(['queued','referencing','generating','validating','rendering']);
+const generationStages=[['queued','等待开始'],['referencing','生成多视角参考图'],['generating','识别参考图与装配模型'],['validating','检查碰撞、悬空与连接'],['rendering','对照参考图并调整外观'],['completed','导入积木工作台']];
 function generationActive(){return generation.starting||activeStatuses.has(generation.job?.status)}
+function hasGenerationInput(){return !!state.referenceImage||!!$('#generation-prompt')?.value.trim()}
 function modelSignature(pieces){return JSON.stringify([...pieces].sort((a,b)=>String(a.id).localeCompare(String(b.id))))}
 function generationIsCurrent(){return !!state.project?.generation&&modelSignature(state.project.pieces)===modelSignature(state.project.originalPieces||[])}
 
@@ -96,16 +97,24 @@ async function openProject(project){
   const version=++previewVersion;requestAnimationFrame(async()=>{try{const image=await model.thumbnail();if(version===previewVersion&&state.project&&!state.project.thumbnail){state.project.thumbnail=image}}catch{}})
  }catch(e){if(request===projectOpenVersion)toast(e.message||'暂时无法打开模型。','error')}
 }
-function openExample(exampleId='songen-example'){return openProject(createExampleProject(exampleId))}
+let exampleOpenVersion=0;
+async function openExample(exampleId='songen-example'){
+ const version=++exampleOpenVersion,previousProject=projectOpenVersion;
+ const project=await loadExampleProject(exampleId);
+ if(version===exampleOpenVersion&&previousProject===projectOpenVersion)return openProject(project);
+}
 function renderExamplePreview(){
  const example=BUILTIN_EXAMPLES.find(item=>item.id===state.exampleId)||BUILTIN_EXAMPLES[0];
  const section=$('#builtin-example-preview');
  if(!section)return;
  section.dataset.exampleId=example.id;section.setAttribute('aria-label',`${example.title}示例模型`);
+ const selector=section.querySelector('.example-selector');
+ if(selector.childElementCount!==BUILTIN_EXAMPLES.length)selector.innerHTML=BUILTIN_EXAMPLES.map(item=>`<button type="button" data-action="select-example" data-example-id="${esc(item.id)}" aria-pressed="false">${esc(item.selectorLabel||item.title)}<span>${esc(item.selectorHint||'示例')}</span></button>`).join('');
  $('#example-kicker').textContent='THE CAMPUS COLLECTION';
+ section.querySelector('.example-top .badge').textContent=example.projectUrl?'AI 生成示例':'内置示例';
  $('#example-word').textContent='Xiamen.';
- const image=$('#create-example-image');image.src=example.thumbnail;image.alt='颂恩楼积木模型，包含红色屋顶、浅色塔身与蓝绿色玻璃窗';
- $('#example-name').textContent=example.title;$('#example-number').textContent='/ 001';
+ const image=$('#create-example-image');image.src=example.thumbnail;image.alt=`${example.title}积木模型`;
+ $('#example-name').textContent=example.title;$('#example-number').textContent='/ '+String(BUILTIN_EXAMPLES.indexOf(example)+1).padStart(3,'0');
  $('#example-description').textContent=example.description||'红瓦飞檐，湖畔的一座厦大地标。';
  $('#open-builtin-example').dataset.exampleId=example.id;
  $('#open-builtin-example').setAttribute('aria-label',`打开${example.title}示例`);
@@ -174,12 +183,12 @@ function workCard(p,compact=false){return `<article class="work-card"><button cl
 function renderRecent(){const node=$('#recent-works');if(!node)return;node.innerHTML=state.projects.length?state.projects.slice(0,3).map(p=>workCard(p,true)).join(''):`<button class="recent-example" data-action="open-example"><span class="part-thumb">${icon('cube')}</span><span><strong>从颂恩楼开始搭建</strong><span>打开示例，体验逐块搭建与自由编辑</span></span>${icon('arrow-up-right')}</button>`}
 function renderWorks(){if(!$('#works-grid'))return;const q=state.worksSearch.trim().toLowerCase();const projects=state.projects.filter(p=>(state.worksFilter!=='favorites'||p.favorite)&&(state.worksFilter!=='edited'||p.source==='user')&&(!q||p.title.toLowerCase().includes(q)));$('#works-grid').innerHTML=projects.map(p=>workCard(p)).join('');$('#works-empty').hidden=projects.length>0;$('#works-empty').innerHTML=`${icon(state.worksFilter==='favorites'?'heart':'folder-open')}<h3>${state.worksFilter==='favorites'?'还没有收藏的模型':q?'没有匹配的作品':'你的第一件作品，从这里开始'}</h3><p>${q?'换个名称试试。':'打开示例，搭建、修改，然后将模型保存到这里。'}</p><button class="button button-primary" data-action="open-example">打开颂恩楼示例 ${icon('arrow-right')}</button>`}
 
-async function imageFromFile(file){if(!file||generationActive())return;try{if(!/^image\/(jpeg|png|webp|gif|heic|heif)$/.test(file.type))throw new Error('请选择 JPG、PNG 或 WebP 图片。');if(file.size>15*1024*1024)throw new Error('图片较大，请选择 15 MB 以内的图片。');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('图片无法读取，请重试。'));reader.readAsDataURL(file)});const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(new Error('浏览器无法预览这张图片，请换成 JPG 或 PNG。'));im.src=data});const size=Math.min(1,1200/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*size));canvas.height=Math.max(1,Math.round(img.height*size));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);state.referenceImage=canvas.toDataURL('image/jpeg',.86);state.referenceName=file.name||'相机照片';renderSource();toast('参考图片已就绪，可以开始生成。')}catch(e){toast(e.message,'error')}finally{$('#image-input').value='';$('#capture-input').value=''}}
-function renderSource(){const node=$('#source-preview');if(!node)return;if(state.referenceImage){node.innerHTML=`<img class="source-image" src="${state.referenceImage}" alt="上传的参考图片"><div class="source-preview-caption"><strong>${esc(state.referenceName)}</strong><span>参考图片已就绪</span></div>`;node.classList.add('has-image')}else{node.innerHTML=`<div class="upload-prompt">${cameraIllustration}<strong>把灵感，放在这里。</strong><span>拖入图片，或选择上传 / 拍照</span><small>JPG、PNG、WebP · 最大 15 MB</small></div>`;node.classList.remove('has-image')}
- const active=generationActive();$('#generate-button').disabled=!state.referenceImage||active;$('#generate-button span').textContent=active?'正在搭建你的模型…':'生成我的积木模型';
+async function imageFromFile(file){if(!file||generationActive())return;try{if(!/^image\/(jpeg|png|webp|gif|heic|heif)$/.test(file.type))throw new Error('请选择 JPG、PNG 或 WebP 图片。');if(file.size>15*1024*1024)throw new Error('图片较大，请选择 15 MB 以内的图片。');const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('图片无法读取，请重试。'));reader.readAsDataURL(file)});const img=await new Promise((resolve,reject)=>{const im=new Image();im.onload=()=>resolve(im);im.onerror=()=>reject(new Error('浏览器无法预览这张图片，请换成 JPG 或 PNG。'));im.src=data});const size=Math.min(1,1200/Math.max(img.width,img.height)),canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(img.width*size));canvas.height=Math.max(1,Math.round(img.height*size));canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);state.referenceImage=canvas.toDataURL('image/jpeg',.86);state.referenceName=file.name||'相机照片';renderSource();toast('图片已上传，可在下方补充修改想法。')}catch(e){toast(e.message,'error')}finally{$('#image-input').value='';$('#capture-input').value=''}}
+function renderSource(){const node=$('#source-preview');if(!node)return;if(state.referenceImage){node.innerHTML=`<img class="source-image" src="${state.referenceImage}" alt="上传的参考图片"><div class="source-preview-caption"><strong>${esc(state.referenceName)}</strong><span>可在下方补充修改想法</span></div>`;node.classList.add('has-image')}else{node.innerHTML=`<div class="upload-prompt">${cameraIllustration}<strong>用图片作为创作参考。</strong><span>拖入图片，或选择上传 / 拍照<br>也可以直接在下方输入文字创作</span><small>JPG、PNG、WebP · 最大 15 MB</small></div>`;node.classList.remove('has-image')}const prompt=$('#generation-prompt');if(prompt)prompt.placeholder=state.referenceImage?'例如：保留图片中的建筑轮廓，把屋顶改成红色，并增加一个展示底座。':'例如：一座红瓦白墙的厦大校门，带有三个拱形入口。';const hint=$('#generation-prompt-hint');if(hint)hint.textContent=state.referenceImage?'选填，补充希望保留或修改的细节':'直接描述，或补充图片修改要求';
+ const active=generationActive(),cap=generation.capabilities;$('#generate-button').disabled=!hasGenerationInput()||active||!cap?.available;$('#generate-button span').textContent=active?'正在搭建你的模型…':'生成我的积木模型';
  $$('[data-action="clear-image"]').forEach(b=>{b.hidden=!state.referenceImage;b.disabled=active});
- $$('[data-action="upload"],[data-action="camera"],#generation-size,#generation-style,#generation-prompt').forEach(el=>el.disabled=active);
- const cap=generation.capabilities;let message=active?(generation.disconnected?'连接中断，任务仍可能继续。':generation.job?.message||'正在提交照片…'):cap?.available?(state.referenceImage?'参考图片已就绪，生成通常需要几分钟。':'上传图片或拍照，开始你的创作。'):cap?.reason||'正在检查生成服务…';
+ $$('[data-action="upload"],[data-action="camera"],#generation-prompt').forEach(el=>el.disabled=active);
+ let message=active?(generation.disconnected?'连接中断，任务仍可能继续。':generation.job?.message||'正在提交创作…'):cap?.available?(hasGenerationInput()?(state.referenceImage?($('#generation-prompt').value.trim()?'将结合参考图片与修改想法生成积木模型。':'图片已就绪，可补充修改想法，也可直接生成。'):'将根据文字描述生成积木模型。'):'直接输入文字开始创作，也可以上传图片并补充修改想法。'):cap?.reason||'正在检查生成服务…';
  $('#generation-status').innerHTML=icon('info')+`<span>${esc(message)}</span>${active?'<button type="button" class="generation-status-link" data-action="show-generation">查看进度</button>':cap?.available?'':'<button type="button" class="generation-status-link" data-action="check-generation">重新检查</button>'}`;
 }
 
@@ -188,37 +197,49 @@ async function checkGenerationService(){
  renderSource();return generation.capabilities;
 }
 function rememberGeneration(id){try{if(id)localStorage.setItem(activeJobKey,id);else localStorage.removeItem(activeJobKey)}catch{}}
+function renderReferenceImages(){
+ const node=$('#generation-references'),job=generation.job,ready=job?.referenceImages?.ready===true&&!!job.id;
+ node.hidden=!ready;
+ if(!ready){node.replaceChildren();delete node.dataset.jobId;return}
+ // Keep the same image element while polling so the preview does not reload.
+ if(node.dataset.jobId===job.id)return;
+ const sheet=generationApi.artifactUrl(job.id,'reference.png');
+ node.innerHTML=`<div class="generation-reference-heading"><strong>AI 多视角参考图</strong><a href="${esc(sheet)}" download="brick.it-reference.png">保存参考图</a></div><img src="${esc(sheet)}" alt="AI 生成的正面、侧面、背面与透视参考图"><figcaption>正面 · 侧面 · 背面 · 透视<br>未见部分为 AI 推测，用于后续搭建参考。</figcaption>`;
+ node.dataset.jobId=job.id;
+}
 function renderGeneration(){
  const job=generation.job,active=generationActive(),failed=job?.status==='failed',cancelled=job?.status==='cancelled';
  $('#generation-title').textContent=failed?'这次搭建还未完成':cancelled?'本次生成已取消':generation.disconnected?'任务连接暂时中断':job?.status==='completed'?'积木模型已生成':'正在搭出你的灵感';
- $('#generation-message').textContent=generation.disconnected?'可以重新连接并继续查看，无需重复提交照片。':job?.error?.message||job?.message||(generation.starting?'正在提交图片，请稍候…':'识别图片、装配零件，并逐轮检查模型。');
+ $('#generation-message').textContent=generation.disconnected?'可以重新连接并继续查看，无需重复提交。':job?.error?.message||job?.message||(generation.starting?'正在提交创作，请稍候…':'生成多视角参考图、装配零件，并检查模型。');
  $('#generation-progress').hidden=!active||generation.disconnected;
- $('#generation-steps').innerHTML=generationStages.map(([stage,label],index)=>{
-  const current=generationStages.findIndex(([key])=>key===(job?.stage||job?.status));
+ const stages=generationStages.filter(([stage])=>stage!=='referencing'||generation.capabilities?.referenceImages?.enabled!==false||job?.referenceImages?.ready||job?.stage==='referencing');
+ $('#generation-steps').innerHTML=stages.map(([stage,label],index)=>{
+  const current=stages.findIndex(([key])=>key===(job?.stage||job?.status));
   const reached=job?.status==='completed'||index<current;
   return `<li class="${reached?'done':stage===(job?.stage||job?.status)?'current':''}"><span>${reached?'✓':index+1}</span>${label}</li>`;
  }).join('');
  const cancel=$('[data-action="cancel-generation"]');cancel.hidden=!active;cancel.disabled=generation.starting;
  const resume=$('[data-action="resume-generation"]');resume.hidden=!generation.disconnected;
- const retry=$('[data-action="retry-generation"]');retry.hidden=!(failed||cancelled)||!state.referenceImage;
+ const retry=$('[data-action="retry-generation"]');retry.hidden=!(failed||cancelled)||!hasGenerationInput();
  const reopen=$('[data-action="import-generation"]');reopen.hidden=job?.status!=='completed'||generation.importing;
  $('#generation-events').textContent=(job?.events||[]).slice(-3).map(event=>event.message).filter(Boolean).join(' · ');
+ renderReferenceImages();
  renderSource();
 }
 function showGeneration(){renderGeneration();const dialog=$('#generation-dialog');if(!dialog.open)dialog.showModal()}
 async function startGeneration(){
- if(generationActive()){showGeneration();return}if(!state.referenceImage)return;
+ if(generationActive()){showGeneration();return}if(!hasGenerationInput())return;
  generation.starting=true;generation.job=null;generation.disconnected=false;renderSource();
  const cap=await checkGenerationService();
  if(!cap.available){generation.starting=false;renderSource();toast(cap.reason||'生成服务尚未准备好。','error');return}
  showGeneration();
  try{
-  const input={image:state.referenceImage,prompt:$('#generation-prompt').value.trim(),size:$('#generation-size').value,style:$('#generation-style').value};
+  const input={...(state.referenceImage?{image:state.referenceImage}:{}),prompt:$('#generation-prompt').value.trim()};
   const job=await generationApi.start(input);
   if(!job?.id||!activeStatuses.has(job.status))throw new Error('生成服务返回的任务无法识别，请检查服务状态。');
   generation.job=job;rememberGeneration(job.id);generation.starting=false;renderGeneration();
   await watchGeneration(job.id);
- }catch(error){generation.job={status:'failed',error:{message:error.message||'暂时无法提交图片，请稍后重试。'}};generation.starting=false;renderGeneration()}
+ }catch(error){generation.job={status:'failed',error:{message:error.message||'暂时无法提交创作，请稍后重试。'}};generation.starting=false;renderGeneration()}
 }
 async function importGeneration(){
  if(generation.importing||generation.job?.status!=='completed')return;
@@ -241,13 +262,13 @@ async function watchGeneration(id){
  while(!controller.signal.aborted){
   try{
    const job=await generationApi.get(id,{signal:controller.signal});
-   if(job.id!==id||!['queued','generating','validating','rendering','completed','failed','cancelled'].includes(job.status))throw new Error('任务状态无法识别。');
+   if(job.id!==id||!['queued','referencing','generating','validating','rendering','completed','failed','cancelled'].includes(job.status))throw new Error('任务状态无法识别。');
    generation.job=job;generation.pollFailures=0;renderGeneration();
    if(job.status==='completed'){try{await importGeneration()}catch(error){$('#generation-message').textContent=error.message;toast(error.message,'error')}return}
    if(job.status==='failed'||job.status==='cancelled'){rememberGeneration(null);return}
   }catch(error){
    if(controller.signal.aborted)return;
-   if(error.status===404){generation.job={id,status:'failed',error:{message:'未找到上次的生成任务，可以重新提交照片。'}};rememberGeneration(null);renderGeneration();return}
+   if(error.status===404){generation.job={id,status:'failed',error:{message:'未找到上次的生成任务，可以重新提交创作。'}};rememberGeneration(null);renderGeneration();return}
    if(++generation.pollFailures>=3){generation.disconnected=true;renderGeneration();return}
   }
   try{await pollDelay(controller.signal)}catch{return}
@@ -269,7 +290,7 @@ async function exportGeneratedArtifact(name){
  if(!generationIsCurrent()){toast('模型已修改。原始生成文件与当前版本不同，请还原原始模型后下载。','error');return}
  const filenames={ldraw:'build.ldr',source:'build.py',report:'report.json'};
  const filename=filenames[name];if(!filename)return;
- try{const response=await fetch(generationApi.artifactUrl(metadata.jobId,filename));if(!response.ok)throw new Error('生成文件暂时无法下载，请确认服务和原任务记录仍在。');download(await response.blob(),`brick.it-${filename}`)}catch(error){toast(error.message||'生成文件无法下载。','error')}
+ try{const response=await fetch(metadata.artifacts?.[name]||generationApi.artifactUrl(metadata.jobId,filename));if(!response.ok)throw new Error('模型文件暂时无法下载，请刷新页面后重试。');download(await response.blob(),`brick.it-${filename}`)}catch(error){toast(error.message||'生成文件无法下载。','error')}
 }
 function renderGenerationValidation(){
  const node=$('#model-validation');if(!node)return;
@@ -283,13 +304,13 @@ function renderGenerationValidation(){
 async function openCamera(){if(innerWidth<700&&/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)){$('#capture-input').click();return}if(!navigator.mediaDevices?.getUserMedia){$('#capture-input').click();return}const dialog=$('#camera-dialog');$('#camera-status').textContent='请允许相机访问，准备好后可以拍摄或重拍。';dialog.showModal();try{const stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});if(!dialog.open){stream.getTracks().forEach(t=>t.stop());return}state.camera=stream;$('#camera-video').srcObject=stream;await $('#camera-video').play();$('#camera-status').textContent='调整构图，点击下方按钮拍照。'}catch(e){$('#camera-status').textContent=e.name==='NotAllowedError'?'相机权限未开启。你也可以上传已有照片。':'相机暂时不可用，请上传已有照片。';toast('相机暂时无法打开，可以改用上传图片。','error')}}
 function stopCamera(){if(state.camera){state.camera.getTracks().forEach(t=>t.stop());state.camera=null}const video=$('#camera-video');if(video)video.srcObject=null}
 function closeCamera(){stopCamera();$('#camera-dialog')?.close()}
-function captureCamera(){const video=$('#camera-video');if(!video.videoWidth){toast('相机还未准备好，可以先上传图片。','error');return}const canvas=$('#camera-canvas');const scale=Math.min(1,1200/video.videoWidth);canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);state.referenceImage=canvas.toDataURL('image/jpeg',.86);state.referenceName='相机照片';closeCamera();renderSource();toast('照片已拍好，可以更换图片或继续。')}
+function captureCamera(){const video=$('#camera-video');if(!video.videoWidth){toast('相机还未准备好，可以先上传图片。','error');return}const canvas=$('#camera-canvas');const scale=Math.min(1,1200/video.videoWidth);canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);state.referenceImage=canvas.toDataURL('image/jpeg',.86);state.referenceName='相机照片';closeCamera();renderSource();toast('照片已拍好，可在下方补充修改想法。')}
 function openSource(){if(state.project?.sourceImage){$('#source-dialog-image').src=state.project.sourceImage;$('#source-dialog').showModal()}else toast('这个模型没有来源照片。新建创作可上传自己的图片。')}
 
 async function handleAction(action,button){if(state.busy&&['use-part','use-ldraw-part','piece-color','rotate-piece','rotate-placement','set-placement-direction','set-piece-direction','restore-original','confirm-restore-original','replace-piece','delete','undo','redo','favorite-work','delete-work','confirm-delete-work'].includes(action)){toast('正在保存，请稍等一下。');return}try{switch(action){case 'return-create':setPage('create');window.scrollTo({top:0,left:0,behavior:'auto'});$('#page-create [data-action="upload"]')?.focus({preventScroll:true});break;case 'new':setPage('create');break;case 'upload':$('#image-input').click();break;case 'camera':await openCamera();break;case 'capture':captureCamera();break;case 'close-camera':closeCamera();break;case 'clear-image':if(generationActive())break;state.referenceImage=null;state.referenceName='';renderSource();break;case 'generate':await startGeneration();break;case 'show-generation':showGeneration();break;case 'check-generation':await checkGenerationService();break;case 'cancel-generation':await cancelGeneration();break;case 'retry-generation':await startGeneration();break;case 'resume-generation':if(generation.job?.id)await watchGeneration(generation.job.id);break;case 'import-generation':await importGeneration();break;case 'export-ldraw':await exportGeneratedArtifact('ldraw');break;case 'export-report':await exportGeneratedArtifact('report');break;case 'select-example':state.exampleId=button.dataset.exampleId;renderExamplePreview();break;case 'open-builtin':case 'open-example':$$('dialog[open]').forEach(d=>d.close());await openExample(button.dataset.exampleId||'songen-example');break;case 'retry-model':enginePromise=null;await openProject(state.project);break;case 'close-dialog':button.closest('dialog')?.close();break;case 'source':openSource();break;case 'favorite':await toggleFavorite();break;case 'save':await saveVersion();break;case 'export-image':await exportImage();break;case 'export-parts':exportParts();break;case 'previous':pause();progressTo(state.progress-1,false);break;case 'next':pause();progressTo(state.progress+1);break;case 'play':togglePlay();break;case 'restart':pause();progressTo(0,false);break;case 'jump':pause();progressTo(+button.dataset.count,false);break;case 'rotate':if(state.placementPart){cancelPlacement();renderPanels()}state.rotating=!state.rotating;engine?.setAutoRotate(state.rotating);updateSceneLabels();break;case 'explode':if(state.placementPart){cancelPlacement();renderPanels()}state.exploded=!state.exploded;engine?.setExploded(state.exploded);updateSceneLabels();break;case 'zoom-in':engine?.zoomBy(1.12);break;case 'zoom-out':engine?.zoomBy(1/1.12);break;case 'reset-view':engine?.resetView();break;case 'use-ldraw-part':{button.disabled=true;try{const part=await fetchLDrawPart(button.dataset.ldrawId);registerProjectParts({parts:[part]});if(state.catalogColor!=='all')state.placementColor=state.catalogColor;await usePart(part.id)}finally{button.disabled=false}break}case 'use-part':if(state.catalogColor!=='all')state.placementColor=state.catalogColor;await usePart(button.dataset.partId);break;case 'placement-color':state.placementColor=button.dataset.color;if(state.placementPart)engine?.setPlacement(state.placementPart,state.placementColor,state.placementRotation);renderPanels();break;case 'rotate-placement':rotatePlacement();break;case 'set-placement-direction':setPlacementDirection(Number(button.dataset.angle));break;case 'set-piece-direction':{const p=selectedPiece(),degrees=Number(button.dataset.angle);if(p&&[0,90,180,270].includes(degrees)&&((Math.round((p.ry||0)*180/Math.PI)%360)+360)%360!==degrees)editSelected({ry:degrees*Math.PI/180});break}case 'restore-original':requestRestoreOriginal();break;case 'confirm-restore-original':button.closest('dialog')?.close();restoreOriginal(button.dataset.projectId);break;case 'piece-color':editSelected({color:button.dataset.color});break;case 'rotate-piece':{const p=selectedPiece();if(p)editSelected({ry:((p.ry||0)+Math.PI/2)%(Math.PI*2)});break}case 'replace-piece':{const old=selectedPiece(),part=findPart($('#replacement-part')?.value);if(old&&part){const candidate=createPiece(part,old.color,{x:old.x,y:old.y-old.h/2+part.h/2,z:old.z,ry:old.ry||0,rz:0});editSelected({...candidate,id:old.id})}break}case 'deselect':state.selectedId=null;engine?.selectPiece(null);renderRight();renderPlayer();break;case 'add':if(!state.placementPart){openMobilePanel('left');toast('先从零件库选择一颗积木，再点击模型或底板放置。')}else toast('点击模型顶面或底板上的空位即可放置。');break;case 'cancel-placement':cancelPlacement();renderPanels();break;case 'delete':removeSelected();break;case 'undo':undo();break;case 'redo':redo();break;case 'clear-catalog':state.catalogSearch='';state.catalogCategory='all';state.catalogColor='all';$('#catalog-search').value='';$('#catalog-category').value='all';$('#catalog-color').value='all';renderCatalog();break;case 'open-work':{const p=await library.get(button.dataset.projectId);if(p)await openProject(p);else toast('没有找到这件本地作品。','error');break}case 'favorite-work':{const id=button.dataset.projectId;if(state.project?.id===id){await toggleFavorite();break}await writeQueue.catch(()=>{});const p=await library.get(id);if(p){p.favorite=!p.favorite;p.updatedAt=new Date().toISOString();await queueStore(p);await refreshProjects()}break}case 'delete-work':requestDelete(button.dataset.projectId);break;case 'confirm-delete-work':button.closest('dialog')?.close();await deleteWork(button.dataset.projectId);break;case 'close-panel':closeMobilePanel();break;default:break}}catch(e){console.error(e);toast(e.message||'这一步暂时未能完成，请重试。','error')}}
 
 document.addEventListener('click',e=>{const button=e.target.closest('button');if(!button||button.disabled)return;if(button.dataset.action){handleAction(button.dataset.action,button);return}if(button.dataset.page){setPage(button.dataset.page);return}if(button.dataset.mode){changeMode(button.dataset.mode);return}if(button.dataset.panel)openMobilePanel(button.dataset.panel)});
-document.addEventListener('input',e=>{const t=e.target;if(t.id==='project-title'&&state.project&&!state.busy&&t.value.trim()&&t.value!==state.project.title){const start=t.selectionStart,end=t.selectionEnd;ensureWritable();recordUndo();state.project.title=t.value.slice(0,80);markChanged();t.setSelectionRange(start,end)}else if(t.id==='progress-range'){pause();progressTo(+t.value,false)}else if(t.id==='catalog-search'){state.catalogSearch=t.value;renderCatalog()}else if(t.id==='mini-search'){state.miniSearch=t.value;renderMiniParts()}else if(t.id==='works-search'){state.worksSearch=t.value;renderWorks()}});
+document.addEventListener('input',e=>{const t=e.target;if(t.id==='project-title'&&state.project&&!state.busy&&t.value.trim()&&t.value!==state.project.title){const start=t.selectionStart,end=t.selectionEnd;ensureWritable();recordUndo();state.project.title=t.value.slice(0,80);markChanged();t.setSelectionRange(start,end)}else if(t.id==='generation-prompt'){renderSource()}else if(t.id==='progress-range'){pause();progressTo(+t.value,false)}else if(t.id==='catalog-search'){state.catalogSearch=t.value;renderCatalog()}else if(t.id==='mini-search'){state.miniSearch=t.value;renderMiniParts()}else if(t.id==='works-search'){state.worksSearch=t.value;renderWorks()}});
 document.addEventListener('change',e=>{const t=e.target;if(state.busy&&(t.dataset.coordinate||t.id==='project-title')){renderProjectHeader();if(state.project)renderRight();return;}if(t.id==='image-input'||t.id==='capture-input')imageFromFile(t.files?.[0]);else if(t.id==='play-speed'){state.speed=+t.value}else if(t.id==='catalog-category'){state.catalogCategory=t.value;renderCatalog()}else if(t.id==='catalog-color'){state.catalogColor=t.value;renderCatalog()}else if(t.id==='works-filter'){state.worksFilter=t.value;renderWorks()}else if(t.id==='project-title'&&state.project){const value=t.value.trim().slice(0,80)||'未命名作品';if(value!==state.project.title){ensureWritable();recordUndo();state.project.title=value;markChanged()}}else if(t.dataset.coordinate){const p=selectedPiece(),v=Number(t.value);if(p&&Number.isFinite(v))editSelected({[t.dataset.coordinate]:v*UNIT})}});
 const uploadTarget=$('.source-input-wrap');
 uploadTarget.addEventListener('dragover',e=>{e.preventDefault();e.currentTarget.classList.add('drag-over')});uploadTarget.addEventListener('dragleave',e=>{if(!e.currentTarget.contains(e.relatedTarget))e.currentTarget.classList.remove('drag-over')});uploadTarget.addEventListener('drop',e=>{e.preventDefault();e.currentTarget.classList.remove('drag-over');imageFromFile(e.dataTransfer.files?.[0])});

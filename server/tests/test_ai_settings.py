@@ -48,6 +48,10 @@ def test_get_settings_never_returns_secret(configured):
     assert response.json() == {"baseUrl": "https://old.example/v1", "model": "old-model", "hasApiKey": True}
     assert "private-old-token" not in response.text
     assert response.headers["cache-control"] == "no-store"
+    for path in ("/", "/ai-settings.css?v=2", "/ai-settings.js?v=2"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-cache"
 
 
 @pytest.mark.parametrize(("given", "expected"), [
@@ -207,3 +211,112 @@ def test_failed_persistence_does_not_change_live_configuration(configured, monke
     assert "private-new-token" not in response.text
     assert os.environ["OPENAI_API_KEY"] == "private-old-token"
     assert app.state.jobs.settings.model == "openai/old-model"
+
+
+@pytest.fixture
+def image_configured(configured, monkeypatch):
+    client, app, env_path = configured
+    values = {"BRICK_IT_IMAGE_API_KEY": "private-image-token",
+              "BRICK_IT_IMAGE_API_BASE": "https://images.example/v1",
+              "BRICK_IT_IMAGE_MODEL": "gpt-image-2.6-sunburst"}
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    env_path.write_text(env_path.read_text() + "".join(f"{key}={value}\n" for key, value in values.items()))
+    app.state.jobs.settings = replace(app.state.jobs.settings,
+        image_model=values["BRICK_IT_IMAGE_MODEL"], image_api_base=values["BRICK_IT_IMAGE_API_BASE"], image_timeout=600)
+    return client, app, env_path
+
+
+def test_image_settings_and_discovery_use_independent_private_key(image_configured, monkeypatch):
+    client, _, env_path = image_configured
+    public = client.get("/api/ai/image/settings")
+    assert public.json() == {"baseUrl": "https://images.example/v1", "model": "gpt-image-2.6-sunburst", "hasApiKey": True}
+    assert "private-image-token" not in public.text and "private-old-token" not in public.text
+    assert public.headers["cache-control"] == "no-store"
+    before = env_path.read_text()
+
+    def handler(request):
+        assert str(request.url) == "https://images.example/v1/models"
+        assert request.headers["authorization"] == "Bearer private-image-token"
+        return httpx.Response(200, json={"data": [{"id": "gpt-image-2.6-sunburst"}]})
+
+    mock_models(monkeypatch, handler)
+    result = client.post("/api/ai/image/models", json={"baseUrl": "https://images.example", "apiKey": ""})
+    assert result.json()["models"] == [{"id": "gpt-image-2.6-sunburst"}]
+    assert env_path.read_text() == before
+    assert "private-image-token" not in result.text
+    monkeypatch.delenv("BRICK_IT_IMAGE_API_KEY")
+    # An existing modelling key cannot silently authorize the image provider.
+    assert client.post("/api/ai/image/models", json={"baseUrl": "https://images.example"}).json()["error"]["code"] == "API_KEY_REQUIRED"
+
+
+def test_image_save_updates_next_worker_without_changing_builder_or_limits(image_configured):
+    client, app, env_path = image_configured
+    settings = app.state.jobs.settings
+    before = dotenv_values(env_path)
+    result = client.post("/api/ai/image/settings", json={"baseUrl": "https://new-images.example/api/", "apiKey": "private-new-image-token", "model": "other-image-model"})
+    assert result.status_code == 200
+    assert result.json() == {"baseUrl": "https://new-images.example/api/v1", "model": "other-image-model", "hasApiKey": True}
+    assert "private-new-image-token" not in result.text
+    saved = dotenv_values(env_path)
+    assert saved["BRICK_IT_IMAGE_MODEL"] == "other-image-model"
+    assert saved["BRICK_IT_IMAGE_API_BASE"] == "https://new-images.example/api/v1"
+    assert saved["BRICK_IT_IMAGE_API_KEY"] == "private-new-image-token"
+    for name in (*NAMES, "BRICK_IT_MAX_COST", "BRICK_IT_JOB_TIMEOUT", "BRICK_IT_REQUEST_TIMEOUT", "BRICK_IT_MAX_CRITIQUE_ROUNDS", "OPENAI_STREAM"):
+        assert saved[name] == before[name]
+    assert app.state.jobs.settings == replace(settings, image_model="other-image-model", image_api_base="https://new-images.example/api/v1")
+    assert app.state.jobs.settings.reference_capabilities()["available"]
+    assert stat.S_IMODE(env_path.stat().st_mode) == 0o600
+    assert client.post("/api/ai/image/settings", json={"baseUrl": "https://new-images.example/api/v1", "apiKey": "", "model": "third-image-model"}).status_code == 200
+    assert dotenv_values(env_path)["BRICK_IT_IMAGE_API_KEY"] == "private-new-image-token"
+    # Saving the builder subsequently must leave the image connection intact.
+    client.post("/api/ai/settings", json={"baseUrl": "https://new-builder.example", "model": "new-builder"})
+    assert dotenv_values(env_path)["BRICK_IT_IMAGE_API_KEY"] == "private-new-image-token"
+    assert app.state.jobs.settings.image_model == "third-image-model"
+
+
+def test_image_settings_survive_restart(image_configured, monkeypatch):
+    client, _, env_path = image_configured
+    client.post("/api/ai/image/settings", json={"baseUrl": "https://new-images.example", "model": "new-image-model"})
+    for name in ("BRICK_IT_IMAGE_MODEL", "BRICK_IT_IMAGE_API_BASE", "BRICK_IT_IMAGE_API_KEY"):
+        monkeypatch.delenv(name)
+    import server.config as config
+    monkeypatch.setattr(config, "ROOT", env_path.parent)
+    restarted = Settings.from_env()
+    assert restarted.image_model == "new-image-model"
+    assert restarted.image_api_base == "https://new-images.example/v1"
+    assert os.environ["BRICK_IT_IMAGE_API_KEY"] == "private-image-token"
+
+
+def test_image_save_is_blocked_during_generation(image_configured):
+    from types import SimpleNamespace
+
+    client, app, env_path = image_configured
+    before = env_path.read_text()
+    app.state.jobs.tasks["held"] = SimpleNamespace(done=lambda: False)
+    try:
+        result = client.post("/api/ai/image/settings", json={"baseUrl": "https://other.example", "model": "other"})
+        assert result.status_code == 409
+        assert env_path.read_text() == before
+    finally:
+        del app.state.jobs.tasks["held"]
+
+
+def test_image_errors_never_leak_or_commit_credentials(image_configured, monkeypatch):
+    client, app, env_path = image_configured
+    before = env_path.read_text()
+    for endpoint in ("/api/ai/image/models", "/api/ai/image/settings"):
+        result = client.post(endpoint, json={"baseUrl": "https://invalid.example/?key=secret", "apiKey": "private-new-image-token", "model": "other"} if endpoint.endswith("settings") else {"baseUrl": "https://invalid.example/?key=secret", "apiKey": "private-new-image-token"})
+        assert result.status_code == 422 and "private-new-image-token" not in result.text
+        result = client.post(endpoint, json={"baseUrl": "https://other.example", "model": "other"}, headers={"origin": "https://evil.example"})
+        assert result.status_code == 403
+    assert env_path.read_text() == before
+
+    def fail(values):
+        raise PermissionError("private-new-image-token")
+
+    monkeypatch.setattr(app.state.ai_settings, "_persist", fail)
+    result = client.post("/api/ai/image/settings", json={"baseUrl": "https://other.example", "apiKey": "private-new-image-token", "model": "other"})
+    assert result.status_code == 503 and "private-new-image-token" not in result.text
+    assert env_path.read_text() == before
+    assert app.state.jobs.settings.image_model == "gpt-image-2.6-sunburst"

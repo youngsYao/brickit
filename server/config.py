@@ -88,6 +88,9 @@ class Settings:
     moonshot_usd_per_cny: float | None = None
     moonshot_reasoning_effort: str = "high"
     moonshot_stream: bool = False
+    image_model: str = ""
+    image_api_base: str = ""
+    image_timeout: float = 300
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -118,6 +121,9 @@ class Settings:
             moonshot_usd_per_cny=optional_exchange_rate_env("MOONSHOT_USD_PER_CNY"),
             moonshot_reasoning_effort=moonshot_reasoning_effort_env(),
             moonshot_stream=boolean_env("MOONSHOT_STREAM", False),
+            image_model=os.environ.get("BRICK_IT_IMAGE_MODEL", "").strip(),
+            image_api_base=os.environ.get("BRICK_IT_IMAGE_API_BASE", "").strip(),
+            image_timeout=bounded_env("BRICK_IT_IMAGE_TIMEOUT", 300, 30, 1800),
         )
 
     @property
@@ -136,7 +142,8 @@ class Settings:
         return ""
 
     def capabilities(self) -> dict:
-        result = {"available": False, "reason": ""}
+        reference = self.reference_capabilities()
+        result = {"available": False, "reason": "", "referenceImages": reference}
         if self.provider:
             result["provider"] = self.provider
         if not self.model:
@@ -160,7 +167,25 @@ class Settings:
             except Exception:
                 result["reason"] = "BrickWright 渲染依赖无法加载，请检查安装和 LDRAW_LIBRARY_PATH。"
         result["limits"] = {"parts": PART_LIMITS, "costUsd": self.max_cost, "timeoutSeconds": self.timeout}
+        if result["available"] and reference["enabled"] and not reference["available"]:
+            result.update(available=False, reason=reference["reason"])
         return result
+
+    def reference_capabilities(self) -> dict:
+        enabled = bool(self.image_model)
+        reason = ""
+        if enabled:
+            if not os.environ.get("BRICK_IT_IMAGE_API_KEY", "").strip():
+                reason = "尚未配置多视角生图 API Key，请设置 BRICK_IT_IMAGE_API_KEY。"
+            else:
+                from .ai_settings import normalize_base_url
+                try:
+                    normalize_base_url(self.image_api_base)
+                except ValueError:
+                    reason = "请为多视角生图配置有效的 BRICK_IT_IMAGE_API_BASE。"
+        return {"enabled": enabled, "available": enabled and not reason,
+                "model": self.image_model, "reason": reason,
+                "views": ["front", "side", "rear", "perspective"]}
 
     def _moonshot_config_reason(self) -> str:
         from .providers import MoonshotPricing, normalize_moonshot_api_base

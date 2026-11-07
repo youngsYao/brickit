@@ -15,6 +15,8 @@ from .schemas import GenerationRequest
 from .storage import TERMINAL, JobStore, atomic_json, now
 
 ARTIFACTS = {"build.ldr", "build.py", "report.json", "build.png"}
+REFERENCE_ARTIFACTS = {"reference.png", "reference-front.png", "reference-side.png",
+                       "reference-rear.png", "reference-perspective.png", "reference.json"}
 
 
 class ServiceError(Exception):
@@ -38,8 +40,10 @@ class JobManager:
         capability = await asyncio.to_thread(self.settings.capabilities)
         if not capability["available"]:
             raise ServiceError("GENERATION_UNAVAILABLE", capability["reason"], 503)
+        if request.image is None and not self.settings.image_model:
+            raise ServiceError("REFERENCE_MODEL_REQUIRED", "文字生成需要先配置多视角生图模型。", 422)
         try:
-            image = await asyncio.to_thread(request.decode_image, self.settings.max_image_bytes)
+            image = await asyncio.to_thread(request.decode_image, self.settings.max_image_bytes) if request.image else None
         except ValueError as exc:
             raise ServiceError("INVALID_IMAGE", str(exc), 422) from exc
         # Image decoding yields to the event loop. Recheck before reserving a slot.
@@ -48,9 +52,10 @@ class JobManager:
         job_id = uuid.uuid4().hex
         path = self.store.path(job_id)
         path.mkdir(mode=0o700)
-        (path / "input.png").write_bytes(image)
+        if image is not None:
+            (path / "input.png").write_bytes(image)
         atomic_json(path / "request.json", request.model_dump(exclude={"image"}))
-        message = "任务已提交，正在准备 BrickWright。"
+        message = "任务已提交，正在准备多视角参考图。" if self.settings.image_model else "任务已提交，正在准备 BrickWright。"
         record = {"id": job_id, "status": "queued", "stage": "queued", "message": message,
                   "createdAt": now(), "updatedAt": now(),
                   "events": [{"stage": "queued", "message": message, "at": now()}]}
@@ -75,7 +80,8 @@ class JobManager:
                 process = await creation
                 raise
             self.processes[job_id] = process
-            self.store.update(job_id, "generating", "正在启动照片分析和积木生成。")
+            stage = "referencing" if self.settings.image_model else "generating"
+            self.store.update(job_id, stage, "正在启动多视角参考图生成。" if self.settings.image_model else "正在启动照片分析和积木生成。")
             await asyncio.wait_for(self._watch(job_id, process), timeout=self.settings.timeout)
             outcome_path = self.store.path(job_id) / "outcome.json"
             outcome = json.loads(outcome_path.read_text()) if outcome_path.is_file() else {}
@@ -106,7 +112,7 @@ class JobManager:
         while line := await process.stdout.readline():
             try:
                 value = json.loads(line)
-                if value.get("brickItEvent") is True and value.get("stage") in {"generating", "validating", "rendering"}:
+                if value.get("brickItEvent") is True and value.get("stage") in {"referencing", "generating", "validating", "rendering"}:
                     self.store.update(job_id, value["stage"], str(value["message"])[:500])
             except (ValueError, AttributeError, KeyError):
                 pass  # SDK logging is deliberately not part of the public API.
@@ -132,7 +138,17 @@ class JobManager:
 
     def get(self, job_id: str) -> dict:
         try:
-            return self.store.read(job_id)
+            record = self.store.read(job_id)
+            path = self.store.path(job_id)
+            if (path / "reference.json").is_file() and all((path / name).is_file() for name in REFERENCE_ARTIFACTS):
+                # Construct URLs from an allowlist, never from provider metadata.
+                metadata = json.loads((path / "reference.json").read_text())
+                prefix = f"/api/generations/{job_id}/artifacts/"
+                record["referenceImages"] = {"ready": True, "model": metadata.get("model", ""),
+                    "sheetUrl": prefix + "reference.png", "synthetic": True,
+                    "views": [{"id": key, "label": label, "url": prefix + f"reference-{key}.png"}
+                              for key, label in (("front", "正面"), ("side", "侧面"), ("rear", "背面"), ("perspective", "透视"))]}
+            return record
         except KeyError as exc:
             raise ServiceError("NOT_FOUND", "找不到这个生成任务。", 404) from exc
 
@@ -151,6 +167,8 @@ class JobManager:
 
     def artifact(self, job_id: str, name: str) -> Path:
         record = self.get(job_id)
+        if name in REFERENCE_ARTIFACTS and record.get("referenceImages", {}).get("ready"):
+            return self.store.path(job_id) / name
         if name not in ARTIFACTS or record["status"] != "completed":
             raise ServiceError("NOT_FOUND", "该下载文件不存在或模型尚未完成。", 404)
         path = self.store.path(job_id) / "artifacts" / name

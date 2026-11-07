@@ -10,17 +10,25 @@ import warnings
 from typing import Literal
 
 from PIL import Image, UnidentifiedImageError
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class GenerationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    image: str = Field(min_length=24, max_length=12 * 1024 * 1024)
+    image: str | None = Field(default=None, min_length=24, max_length=12 * 1024 * 1024)
     prompt: str = Field(default="", max_length=2000)
     size: Literal["small", "medium", "large"] = "medium"
     style: Literal["classic", "pixel"] = "classic"
 
+    @model_validator(mode="after")
+    def require_input(self):
+        if not self.image and not self.prompt.strip():
+            raise ValueError("请上传图片或填写文字描述。")
+        return self
+
     def decode_image(self, max_bytes: int) -> bytes:
+        if self.image is None:
+            raise ValueError("请上传图片。")
         match = re.fullmatch(r"data:image/(png|jpeg|webp);base64,([A-Za-z0-9+/=\r\n]+)", self.image)
         if match is None:
             raise ValueError("请上传 PNG、JPEG 或 WebP 照片。")

@@ -77,7 +77,13 @@ class AISettings:
         # model while a new job is still decoding its image and reserving a slot.
         self.lock = asyncio.Lock()
 
-    def public(self) -> dict:
+    def public(self, *, image: bool = False) -> dict:
+        if image:
+            return {
+                "baseUrl": self.manager.settings.image_api_base or DEFAULT_BASE_URL,
+                "model": self.manager.settings.image_model,
+                "hasApiKey": bool(os.environ.get("BRICK_IT_IMAGE_API_KEY", "").strip()),
+            }
         model = self.manager.settings.model
         return {
             "baseUrl": os.environ.get("OPENAI_BASE_URL", "").strip()
@@ -87,16 +93,16 @@ class AISettings:
         }
 
     @staticmethod
-    def api_key(provided: str) -> str:
-        key = provided or os.environ.get("OPENAI_API_KEY", "").strip()
+    def api_key(provided: str, *, image: bool = False) -> str:
+        key = provided or os.environ.get("BRICK_IT_IMAGE_API_KEY" if image else "OPENAI_API_KEY", "").strip()
         if not key:
             raise ServiceError("API_KEY_REQUIRED", "请先填写 API Key。", 422)
         return key
 
-    async def models(self, request: ModelsRequest) -> dict:
-        key = self.api_key(request.apiKey)
+    async def models(self, request: ModelsRequest, *, image: bool = False) -> dict:
+        key = self.api_key(request.apiKey, image=image)
         try:
-            async with httpx.AsyncClient(timeout=None, follow_redirects=False) as client:
+            async with httpx.AsyncClient(timeout=30, follow_redirects=False) as client:
                 response = await client.get(request.baseUrl + "/models", headers={"Authorization": f"Bearer {key}", "Accept": "application/json"})
         except (httpx.HTTPError, httpx.InvalidURL):
             raise ServiceError("MODEL_CONNECTION_FAILED", "无法连接模型服务，请检查 API 地址和网络后重试。", 502) from None
@@ -120,20 +126,27 @@ class AISettings:
             raise ServiceError("EMPTY_MODEL_LIST", "此 API Key 暂无可选模型，请检查服务商的模型权限。", 422)
         return {"baseUrl": request.baseUrl, "models": [{"id": value} for value in sorted(ids, key=str.casefold)]}
 
-    async def save(self, request: SaveSettingsRequest) -> dict:
+    async def save(self, request: SaveSettingsRequest, *, image: bool = False) -> dict:
         async with self.lock:
             if any(not task.done() for task in self.manager.tasks.values()):
                 raise ServiceError("GENERATION_ACTIVE", "请等待当前生成完成，或取消后再修改 AI 模型设置。", 409)
-            values = {"OPENAI_BASE_URL": request.baseUrl, "OPENAI_API_BASE": request.baseUrl,
-                      "OPENAI_API_KEY": self.api_key(request.apiKey),
-                      "BRICKWRIGHT_GENERATION_MODEL": "openai/" + request.model}
+            if image:
+                values = {"BRICK_IT_IMAGE_API_BASE": request.baseUrl,
+                          "BRICK_IT_IMAGE_API_KEY": self.api_key(request.apiKey, image=True),
+                          "BRICK_IT_IMAGE_MODEL": request.model}
+                updates = {"image_model": request.model, "image_api_base": request.baseUrl}
+            else:
+                values = {"OPENAI_BASE_URL": request.baseUrl, "OPENAI_API_BASE": request.baseUrl,
+                          "OPENAI_API_KEY": self.api_key(request.apiKey),
+                          "BRICKWRIGHT_GENERATION_MODEL": "openai/" + request.model}
+                updates = {"model": values["BRICKWRIGHT_GENERATION_MODEL"]}
             try:
                 self._persist(values)
             except OSError:
                 raise ServiceError("SETTINGS_SAVE_FAILED", "无法保存 AI 模型设置，请检查本地配置文件是否可写。", 503) from None
             os.environ.update(values)
-            self.manager.settings = replace(self.manager.settings, model=values["BRICKWRIGHT_GENERATION_MODEL"])
-            return self.public()
+            self.manager.settings = replace(self.manager.settings, **updates)
+            return self.public(image=image)
 
     def _persist(self, values: dict[str, str]) -> None:
         """Replace the local file atomically; retain unrelated controls/comments."""

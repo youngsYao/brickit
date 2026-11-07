@@ -65,7 +65,7 @@ def fixture_project(job_id="ui-fixture-job"):
         "sourceImage": None, "createdAt": now, "updatedAt": now,
         "version": 1, "favorite": False, "parts": [part], "pieces": [piece],
         "originalPieces": [copy.deepcopy(piece)],
-        "settings": {"size": "small", "style": "classic"},
+        "settings": {"size": "medium", "style": "classic"},
         "generation": {
             "jobId": job_id,
             "validation": {"ok": True, "checks": {
@@ -92,6 +92,7 @@ class ApiFixture:
         self.history = []
         self.failed_gets_remaining = 0
         self.capability_delay = 0
+        self.reference_ready = False
 
     def advance(self, stage, message):
         self.current, self.message = stage, message
@@ -107,7 +108,9 @@ class ApiFixture:
                 if self.capability_delay:
                     time.sleep(self.capability_delay)
                 available = self.availability == "available"
-                route.fulfill(json={"available": available, "reason": None if available else "TEST 生成服务尚未配置"})
+                route.fulfill(json={"available": available, "reason": None if available else "TEST 生成服务尚未配置",
+                                    "referenceImages": {"enabled": True, "available": available,
+                                                        "model": "test-image-model"}})
             elif pathname == "generations" and request.method == "POST":
                 self.posts.append(request.post_data_json)
                 route.fulfill(status=202, json={"id": "ui-fixture-job", "status": "queued"})
@@ -123,7 +126,10 @@ class ApiFixture:
                     return
                 route.fulfill(json=self.job())
             elif pathname.startswith("generations/ui-fixture-job/artifacts/"):
-                route.fulfill(content_type="text/plain", body="TEST artifact fixture\n")
+                if pathname.endswith("/reference.png"):
+                    route.fulfill(content_type="image/png", body=(Path(__file__).resolve().parent.parent / "dist/assets/songen-preview.png").read_bytes())
+                else:
+                    route.fulfill(content_type="text/plain", body="TEST artifact fixture\n")
             else:
                 route.fulfill(status=404, json={"error": {"code": "TEST_NOT_FOUND", "message": pathname}})
 
@@ -135,6 +141,8 @@ class ApiFixture:
             self.history.append(event)
         job = {"id": "ui-fixture-job", "status": self.current, "stage": self.current,
                "message": self.message, "events": copy.deepcopy(self.history)}
+        if self.reference_ready:
+            job["referenceImages"] = {"ready": True, "sheetUrl": "/api/generations/ui-fixture-job/artifacts/reference.png"}
         if self.current == "completed":
             job["result"] = fixture_project()
         if self.current == "failed":
@@ -173,8 +181,7 @@ def assert_same_pieces(actual, expected, message):
 def test_success(page, fixture, base_url, checks):
     ready(page, base_url)
     upload(page)
-    page.locator("#generation-size").select_option("small")
-    page.locator("#generation-style").select_option("classic")
+    expect(page.locator("#generation-size, #generation-style")).to_have_count(0)
     prompt = page.locator("#generation-prompt")
     if prompt.count():
         prompt.fill("保留红色外观与主要轮廓")
@@ -184,11 +191,11 @@ def test_success(page, fixture, base_url, checks):
     assert len(fixture.posts) == 1, "One click submits exactly one generation request"
     request = fixture.posts[0]
     assert request["image"].startswith("data:image/"), "Generation sends the selected photo"
-    assert request["size"] == "small" and request["style"] == "classic", "Generation sends the selected settings"
+    assert "size" not in request and "style" not in request, "Generation uses server defaults without showing size/style controls"
     if prompt.count():
         assert request["prompt"] == "保留红色外观与主要轮廓", "Generation sends the user's instructions"
     assert_no_import(page)
-    checks.append("上传照片及设置通过真实请求契约提交，未提前导入示例")
+    checks.append("参考图片与修改想法一起提交，使用默认生成参数，未提前导入示例")
 
     for stage, message in [
         ("validating", "TEST 检查碰撞、悬空与连接"),
@@ -287,6 +294,46 @@ def test_cancel(page, fixture, base_url, checks):
     checks.append("取消通知后端、停止轮询，迟到结果不会覆盖工作台")
 
 
+def test_text_reference(page, fixture, base_url, checks):
+    ready(page, base_url)
+    prompt = page.locator("#generation-prompt")
+    expect(page.locator("#generate-button")).to_be_disabled()
+    prompt.fill("   ")
+    expect(page.locator("#generate-button")).to_be_disabled()
+    prompt.fill("厦门大学校门，保留红色屋顶、石柱和校名")
+    expect(page.locator("#generate-button")).to_be_enabled()
+    fixture.advance("referencing", "TEST 正在生成校门多视角参考图")
+    page.locator("#generate-button").click()
+    expect(page.locator("#generation-message")).to_contain_text(fixture.message)
+    expect(page.locator("#generation-steps .current")).to_contain_text("多视角参考图")
+    assert len(fixture.posts) == 1
+    assert "image" not in fixture.posts[0], "Text-only requests omit the optional image field"
+    assert fixture.posts[0]["prompt"] == "厦门大学校门，保留红色屋顶、石柱和校名"
+    expect(prompt).to_be_disabled()
+    expect(page.locator("#generation-references")).to_be_hidden()
+    assert_no_import(page)
+    checks.append("纯文字描述可提交，空白描述不能提交，生图阶段不会提前导入模型")
+
+    fixture.reference_ready = True
+    fixture.advance("generating", "TEST 正在使用多视角参考图搭建模型")
+    expect(page.locator("#generation-references")).to_be_visible(timeout=20000)
+    expect(page.locator("#generation-references")).to_contain_text("未见部分为 AI 推测")
+    page.wait_for_function("document.querySelector('#generation-references img')?.naturalWidth > 0")
+    assert len(fixture.posts) == 1, "Showing references does not submit another paid job"
+    destination = Path("output/playwright")
+    destination.mkdir(parents=True, exist_ok=True)
+    page.screenshot(path=str(destination / "generation-text-reference-desktop.png"), full_page=True)
+    page.set_viewport_size({"width": 390, "height": 844})
+    expect(page.locator("#generation-references")).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    page.screenshot(path=str(destination / "generation-text-reference-mobile.png"), full_page=True)
+    fixture.advance("failed", "TEST 无法通过碰撞检查")
+    expect(page.locator("#generation-message")).to_contain_text("TEST 无法通过碰撞检查", timeout=20000)
+    expect(page.locator("#generation-references")).to_be_visible()
+    expect(page.locator("[data-action='retry-generation']")).to_be_visible()
+    checks.append("参考图在桌面、手机和下游失败时可查看与保存，文字创作保留重试入口")
+
+
 def test_failure(page, fixture, base_url, checks):
     ready(page, base_url)
     upload(page)
@@ -378,7 +425,7 @@ def main():
     parser.add_argument("--base-url", help="Existing server URL; omit to start an isolated static server")
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--project-fixture", help="Optional real BrickLayer-generated project JSON to test instead of the built-in mesh fixture")
-    parser.add_argument("--only", choices=["success", "cancel", "failure", "unavailable", "network-error", "resume", "double-click"])
+    parser.add_argument("--only", choices=["success", "cancel", "failure", "unavailable", "network-error", "resume", "double-click", "text-reference"])
     args = parser.parse_args()
     temporary_server = None
     if args.base_url is None:
@@ -398,6 +445,7 @@ def main():
         ("network-error", test_network_error, "network-error"),
         ("resume", test_resume, "available"),
         ("double-click", test_double_click, "available"),
+        ("text-reference", test_text_reference, "available"),
     ]
     results = []
     started = time.monotonic()

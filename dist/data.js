@@ -1,4 +1,5 @@
 import { createSongenPieces, SONGEN_EXAMPLE } from './examples/songen.js';
+import { GENERATED_EXAMPLES } from './examples/generated.js';
 
 /**
  * brick.it's browser-local model and curated sample-part data.
@@ -162,21 +163,50 @@ function createLegacyApplePieces() {
   return pieces.map((piece,index)=>({...piece,id:`apple-${String(index+1).padStart(3,'0')}`,partId:canonicalPartId(piece),ry:piece.ry||0,rz:piece.rz||0}));
 }
 export const BUILTIN_EXAMPLES = Object.freeze([
-  Object.freeze({ ...SONGEN_EXAMPLE, id:'songen-example', title:'厦大 · 颂恩楼', sourceImage:'./assets/songen-reference.jpg', thumbnail:'./assets/songen-preview.png' })
+  Object.freeze({ ...SONGEN_EXAMPLE, id:'songen-example', title:'厦大 · 颂恩楼', selectorLabel:'颂恩楼', selectorHint:'校园场景', sourceImage:'./assets/songen-reference.jpg', thumbnail:'./assets/songen-preview.png' }),
+  ...GENERATED_EXAMPLES,
 ]);
 const builtinExampleIndex = new Map(BUILTIN_EXAMPLES.map(example => [example.id, example]));
-function createBuiltinPieces() { return createSongenPieces(); }
+const builtinProjects = new Map(), builtinLoads = new Map();
+function createBuiltinPieces(exampleId='songen-example') {
+  if(exampleId==='songen-example')return createSongenPieces();
+  const project=builtinProjects.get(exampleId);
+  if(!project)throw new TypeError('示例尚未加载，请重新打开。');
+  return cloneProject(project.pieces);
+}
+
+/** Load saved meshes on demand so the home page stays light and works offline. */
+export async function loadExampleProject(exampleId='songen-example') {
+  const example=builtinExampleIndex.get(exampleId);
+  if(!example)throw new TypeError('没有找到这个内置示例。');
+  if(example.projectUrl&&!builtinProjects.has(exampleId)) {
+    if(!builtinLoads.has(exampleId)) {
+      const load=(async()=>{
+        const response=await fetch(example.projectUrl);
+        if(!response.ok)throw new Error('示例文件暂时无法读取，请刷新后重试。');
+        const project=await response.json();
+        if(project.id!==exampleId||!Array.isArray(project.pieces)||project.pieces.length!==example.pieceCount||!project.generation?.validation?.ok)throw new TypeError('示例模型数据不完整。');
+        registerProjectParts(project);
+        builtinProjects.set(exampleId,project);
+      })();
+      builtinLoads.set(exampleId,load);
+    }
+    try{await builtinLoads.get(exampleId)}finally{builtinLoads.delete(exampleId)}
+  }
+  return createExampleProject(exampleId);
+}
 
 /** Bundled examples work without the generation service or browser storage. */
 export function createExampleProject(exampleId = 'songen-example') {
   const example = builtinExampleIndex.get(exampleId);
   if (!example) throw new TypeError('没有找到这个内置示例。');
   const now=new Date().toISOString();
+  const saved=cloneProject(builtinProjects.get(exampleId));
   const pieces=createBuiltinPieces(exampleId);
   return {
-    ...example, exampleId, source:'example',
+    ...saved,...example, exampleId, source:'example',draft:false,
     createdAt:now,updatedAt:now,favorite:false,version:1,
-    pieces,originalPieces:cloneProject(pieces),settings:{size:'large',style:'classic'}
+    pieces,originalPieces:cloneProject(pieces),settings:saved?.settings||{size:'large',style:'classic'}
   };
 }
 export function cloneProject(project) {
@@ -191,7 +221,7 @@ export async function resolveOriginalPieces(project, getProject = id => library.
   for(let depth=0;current&&depth<60;depth++) {
     if(Array.isArray(current.originalPieces))return cloneProject(current.originalPieces);
     const builtinId=[current.exampleId,current.rootId,current.id].find(id=>builtinExampleIndex.has(id));
-    if(builtinId)return createBuiltinPieces(builtinId);
+    if(builtinId)return (await loadExampleProject(builtinId)).pieces;
     if([current.exampleId,current.rootId,current.id].includes('apple-example'))return createLegacyApplePieces();
     if(current.id&&visited.has(current.id))break;
     if(current.id)visited.add(current.id);

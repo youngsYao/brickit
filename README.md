@@ -1,10 +1,11 @@
 # brick.it
 
-一个以图片创作为入口的积木模型工作台。已接入官方 BrickWright / BrickLayer：照片 → AI 编写装配程序 → 几何校验 → 渲染与照片对照 → 反馈修正 → 导入三维工作台。生成需要在本地服务端配置模型 API Key 与 LDraw 零件库；未配置时仍可使用颂恩楼示例、编辑和本地作品库，不会把示例伪装成生成结果。
+一个以图片或文字创作为入口的积木模型工作台。已接入官方 BrickWright / BrickLayer：图片或描述 → 多视角参考图 → AI 编写装配程序 → 几何校验 → 渲染与参考图对照 → 反馈修正 → 导入三维工作台。生成需要在本地服务端配置模型 API Key 与 LDraw 零件库；未配置时仍可使用颂恩楼示例、编辑和本地作品库，不会把示例伪装成生成结果。
 
 ## 已实现
 
 - 图片选择、拖放、预览与移除；手机拍照入口，以及支持设备上的相机拍摄与关闭释放。
+- 首页示例区可切换校园场景、生成的颂恩楼（589 颗）与厦大校门（246 颗）；生成示例的真实零件网格、原图和下载文件随站点保存，无需重新调用 AI。
 - 上传区使用与系统暖白、浅灰绿色调一致的积木信纸底图，以及原生 SVG 积木相机；底图无水印，整个底板都支持拖放图片。
 - 颂恩楼校园场景积木逐颗拼装，上一块/下一块、播放暂停、速度、进度定位和阶段跳转。
 - 独立的搭建 / 编辑模式；模型旋转、缩放、分层、当前积木高亮。
@@ -47,6 +48,32 @@ npm run dev
 打开 [http://127.0.0.1:4173](http://127.0.0.1:4173)。生成服务和静态页面共用同一地址。点击“生成”后，照片会发送至配置的模型服务商。相机需要浏览器授权，并在 HTTPS 或 localhost 下使用；三维工作台需要 WebGL 2。
 
 只运行原有静态工作台可使用 `npm run dev:static`，此时生成入口会明确显示服务不可用。已有静态托管不会自动获得 Python 后端。
+
+### 多视角参考图
+
+点击或悬停右上角用户图标，在“AI 模型设置”中切换到“参考图生成”，分别填写生图服务地址和密钥、获取模型并保存。建模与生图使用独立配置；保存后立即用于下一次任务，留空密钥可保留已存值。
+
+也可在 `.env` 配置生图连接，然后重启本地服务：
+
+```dotenv
+BRICK_IT_IMAGE_MODEL=gpt-image-2.6-sunburst
+BRICK_IT_IMAGE_API_BASE=https://你的兼容服务地址/v1
+BRICK_IT_IMAGE_API_KEY=填写生图密钥
+BRICK_IT_IMAGE_TIMEOUT=300
+```
+
+首页可上传图片，也可只填写描述（如“厦门大学校门”）。系统先用一次生图请求生成同一主体的四视角总图，再按固定位置提取正面、右侧、背面和透视图，随后把总图交给积木建模。视觉评审使用透视图匹配模型渲染的观察角度；建模和断点恢复始终保留完整四视角。生成窗口展示参考图并提供下载；后续建模失败仍能查看参考图。未见角度是 AI 推测，不是实测建筑资料。
+
+文字输入使用兼容接口的 `POST /images/generations`；上传图片使用 `POST /images/edits`，图片会实际发送给生图模型。生图失败、超时或返回无效图片时停止后续流程，不自动重试付费请求。生图用量单独记录，无法确认的金额保留为 `null`；生图费用不计入原有的 `BRICK_IT_MAX_COST` 建模预算。密钥只保存在本机 `.env` 中，不返回浏览器。
+
+仅测试参考图、不启动积木建模：
+
+```sh
+uv run python scripts/generate_references.py --prompt '厦门大学校门' --output-dir output/imagegen/xmu-gate-test
+# 使用图片时可添加 --image /absolute/path/photo.jpg
+```
+
+每次指定新的或空的输出目录；结果包含 `reference.png`、四张视角图和 `reference.json`。留空 `BRICK_IT_IMAGE_MODEL` 可继续原有的照片直接建模流程。中断恢复会复用原有参考图，不重复调用生图接口。
 
 ### GPT-6 Astra / OpenAI 兼容接口
 
@@ -114,6 +141,8 @@ MOONSHOT_STREAM=true
 
 视觉修改最多一轮：完成首次模型后评审一次，如有建议则修改一次，并渲染、校验最终结果后输出，不再发起第二轮视觉评审。旧配置中更高的 `BRICK_IT_MAX_CRITIQUE_ROUNDS` 也会限制为 `1`，报告记录实际值。结构校验及修复仍可执行多次，费用、请求和任务时限可继续保持无限制。
 
+一轮视觉评审内部的观察角度匹配单独受 `BRICK_IT_MAX_VIEWPOINT_ITERATIONS` 控制（当前示例配置为 6），因此不等于只发起一次模型请求。建模自检和评审后的修改也可多次渲染、校验；进度提示分别显示“第 1/1 轮评审”和“评审后修改”。
+
 `MOONSHOT_STREAM=true` 按 [Kimi 流式协议](https://platform.kimi.com/docs/guide/utilize-the-streaming-output-feature-of-kimi-api)持续接收长响应，完整保留工具调用与推理上下文；收到结束标记、完整工具参数和服务商真实用量后才执行工具。私有进度文件只记录收到的数据计数与时间，不对外展示模型推理。
 
 无预算模式下，暂时性 HTTP 500 / 502 / 503 / 504 最多自动重试两次，按 30 / 60 秒退避。失败请求是否计费无法确认时，总费用保持未知，并单独保留已确认费用；默认有限预算模式仍会停止，避免越过预算继续调用。
@@ -165,8 +194,8 @@ npm run setup:ldraw -- --destination /path/to/ldraw --archive /path/to/ldraw-com
 
 直接依赖 [官方仓库](https://github.com/AvaLovelace1/brickwright)，固定提交 `f8a90d1a416582e945505398311ffa397aa84959`，依赖版本记录于 `uv.lock`。不复制论文指标，也不使用预制模型代替 AI 结果。
 
-1. 浏览器缩小并上传图片，可附加提示词、模型大小和风格。
-2. 本地服务保存任务，启动可终止的独立生成进程，使用官方 `run_agent()`。
+1. 直接填写文字描述生成模型，或上传图片并补充自己的修改想法。界面使用默认搭建参数。
+2. 本地服务保存任务，启动可终止的独立生成进程；配置生图连接时先生成四视角参考图，成功后再使用官方 `run_agent()` 建模。
 3. AI 使用真实目录零件编写 `build.py`，根据 `validate()` 返回的错误修正结构。
 4. 最多一轮视觉评审：多视角渲染、匹配参考观察角度、对照照片并反馈一次修改建议；修改完成后重新渲染并输出，不再开启第二轮评审。
 5. `finalize()` 后重新读取实际导出的 LDraw 文件，独立强制检查：非空、件数上限、无碰撞、无悬空、单一连接组件。未完成、预算耗尽、成功响应缺少费用记录或校验失败均不导入。
@@ -184,6 +213,9 @@ npm run setup:ldraw -- --destination /path/to/ldraw --archive /path/to/ldraw-com
 | `GET /api/ai/settings` | 当前 OpenAI 兼容地址、模型和密钥是否已配置，不返回密钥 |
 | `POST /api/ai/models` | 用 `{baseUrl, apiKey?}` 获取服务商模型列表，空密钥复用已存密钥 |
 | `POST /api/ai/settings` | 保存 `{baseUrl, apiKey?, model}`，下一次生成立即生效 |
+| `GET /api/ai/image/settings` | 当前生图地址、模型和密钥配置状态，不返回密钥 |
+| `POST /api/ai/image/models` | 用独立生图密钥获取模型列表，不产生图片 |
+| `POST /api/ai/image/settings` | 保存独立的生图连接，下一次生成立即生效 |
 | `POST /api/generations` | 提交 `{image, prompt, size, style}`，返回任务 ID |
 | `GET /api/generations/{id}` | 轮询阶段、消息与完成后的 Project |
 | `DELETE /api/generations/{id}` | 取消任务并终止生成进程组 |

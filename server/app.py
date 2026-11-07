@@ -79,6 +79,9 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
         response.headers["X-Request-ID"] = request_id
         if request.url.path.startswith("/api/") and not request.url.path.startswith("/api/ldraw/"):
             response.headers["Cache-Control"] = "no-store"
+        elif response.headers.get("content-type", "").split(";", 1)[0] in {"text/html", "text/css", "text/javascript", "application/javascript"}:
+            # Revalidate the shell and its code together after local updates.
+            response.headers["Cache-Control"] = "no-cache"
         return response
 
     @app.exception_handler(ServiceError)
@@ -115,6 +118,18 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
     async def save_ai_settings(request: SaveSettingsRequest):
         return await ai_settings.save(request)
 
+    @app.get("/api/ai/image/settings")
+    async def get_image_settings():
+        return ai_settings.public(image=True)
+
+    @app.post("/api/ai/image/models")
+    async def list_image_models(request: ModelsRequest):
+        return await ai_settings.models(request, image=True)
+
+    @app.post("/api/ai/image/settings")
+    async def save_image_settings(request: SaveSettingsRequest):
+        return await ai_settings.save(request, image=True)
+
     @app.post("/api/generations", status_code=202)
     async def create_generation(request: GenerationRequest):
         async with ai_settings.lock:
@@ -131,7 +146,7 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
     @app.get("/api/generations/{job_id}/artifacts/{name}")
     async def artifact(job_id: str, name: str):
         path = manager.artifact(job_id, name)
-        media = {"build.png": "image/png", "report.json": "application/json", "build.py": "text/plain; charset=utf-8", "build.ldr": "text/plain; charset=utf-8"}[name]
+        media = "image/png" if name.endswith(".png") else "application/json" if name.endswith(".json") else "text/plain; charset=utf-8"
         return FileResponse(path, filename=name, media_type=media)
 
     # Keep unknown API routes out of the static-file fallback.

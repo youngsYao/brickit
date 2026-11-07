@@ -4,11 +4,12 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f7f6f2">
-  <meta name="description" content="brick.it 积木创作工作台。上传或拍摄图片、探索逐块搭建，用常见零件自由修改模型，并收藏你的作品。">
+  <meta name="description" content="brick.it 积木创作工作台。用文字描述直接生成积木模型，或上传图片并补充修改想法，体验逐块搭建、自由编辑与作品收藏。">
   <title>brick.it · 把灵感搭出来</title>
   <link rel="icon" type="image/svg+xml" href="./assets/favicon.svg?v=brick-mark-1">
   <link rel="preload" as="font" type="font/woff2" href="./assets/fonts/outfit-latin-wght-normal.woff2" crossorigin>
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./ai-settings.css?v=2">
   <script type="importmap">{"imports":{"three":"./assets/vendor/three.module.js"}}</script>
 </head>
 <body>
@@ -24,14 +25,24 @@
         <button type="button" class="button button-ghost user-settings-button" id="user-settings-button" aria-label="用户与 AI 模型设置" aria-expanded="false" aria-controls="ai-settings-panel"><img class="icon brick-ui-icon" src="./assets/brick-user.svg" data-icon="user" alt="" aria-hidden="true" draggable="false" width="36" height="36"></button>
         <section class="ai-settings-panel" id="ai-settings-panel" aria-labelledby="ai-settings-title" hidden>
           <div class="ai-settings-heading"><div><span class="ai-settings-eyebrow">YOUR WORKSPACE</span><h2 id="ai-settings-title">AI 模型设置</h2></div><button type="button" class="button button-icon button-ghost" id="ai-settings-close" aria-label="关闭模型设置"><img class="icon brick-ui-icon" src="./assets/brick-close.svg" alt="" aria-hidden="true" width="20" height="20"></button></div>
-          <div class="ai-settings-intro"><p>连接你的 AI 服务，用图片搭出积木。</p><span class="ai-settings-badge" id="ai-settings-badge">待配置</span></div>
-          <form id="ai-settings-form" autocomplete="off">
-            <label class="field-label" for="ai-base-url">服务地址 <span class="ai-field-hint">兼容 OpenAI</span><input class="field-input" id="ai-base-url" name="baseUrl" type="url" placeholder="https://api.example.com/v1" required spellcheck="false" autocomplete="off"></label>
+          <div class="ai-settings-tabs" role="tablist" aria-label="配置生成环节"><button type="button" role="tab" id="ai-tab-model" aria-selected="true" aria-controls="ai-settings-form">积木建模</button><button type="button" role="tab" id="ai-tab-image" aria-selected="false" aria-controls="ai-image-settings-form" tabindex="-1">参考图生成</button></div>
+          <div class="ai-settings-intro"><p id="ai-settings-description">根据参考图设计积木结构并检查模型。</p><span class="ai-settings-badge" id="ai-settings-badge">待配置</span></div>
+          <form id="ai-settings-form" role="tabpanel" aria-labelledby="ai-tab-model" autocomplete="off">
+            <label class="field-label" for="ai-base-url"><span class="ai-label-row">服务地址 <span class="ai-field-hint">兼容 OpenAI</span></span><input class="field-input" id="ai-base-url" name="baseUrl" type="url" placeholder="https://api.example.com/v1" required spellcheck="false" autocomplete="off"></label>
             <label class="field-label" for="ai-api-key">API Key<input class="field-input" id="ai-api-key" name="apiKey" type="password" placeholder="输入 API Key" maxlength="4096" spellcheck="false" autocomplete="new-password"><span class="ai-key-note">密钥仅保存在本机，留空可继续使用已存密钥。</span></label>
             <div class="ai-model-heading"><label class="field-label" for="ai-model">模型名称</label><button type="button" class="ai-model-refresh" id="ai-models-refresh">获取模型</button></div>
             <select class="field-select" id="ai-model" name="model" required><option value="">先获取可用模型</option></select>
             <p class="ai-settings-status" id="ai-settings-status" role="status" aria-live="polite">填写服务地址和密钥，获取可用模型。</p>
             <div class="ai-settings-footer"><span>用于下一次生成</span><button type="submit" class="button button-primary" id="ai-settings-save">保存设置</button></div>
+          </form>
+          <form id="ai-image-settings-form" role="tabpanel" aria-labelledby="ai-tab-image" autocomplete="off" hidden>
+            <label class="field-label" for="ai-image-base-url"><span class="ai-label-row">生图服务地址 <span class="ai-field-hint">兼容 OpenAI</span></span><input class="field-input" id="ai-image-base-url" name="baseUrl" type="url" placeholder="https://api.example.com/v1" required spellcheck="false" autocomplete="off"></label>
+            <label class="field-label" for="ai-image-api-key">生图 API Key<input class="field-input" id="ai-image-api-key" name="apiKey" type="password" placeholder="输入生图 API Key" maxlength="4096" spellcheck="false" autocomplete="new-password"><span class="ai-key-note">独立保存生图密钥，留空可继续使用已存密钥。</span></label>
+            <div class="ai-model-heading"><label class="field-label" for="ai-image-model">生图模型</label><button type="button" class="ai-model-refresh" id="ai-image-models-refresh">获取模型</button></div>
+            <select class="field-select" id="ai-image-model" name="model" required><option value="">先获取可用模型</option></select>
+            <p class="ai-model-note">选择支持图片生成与编辑的模型，用于生成四视角参考图。</p>
+            <p class="ai-settings-status" id="ai-image-settings-status" role="status" aria-live="polite">填写生图地址和密钥，获取可用模型。</p>
+            <div class="ai-settings-footer"><span>保存后用于下一次生成</span><button type="submit" class="button button-primary" id="ai-image-settings-save">保存设置</button></div>
           </form>
         </section>
       </div>
@@ -40,17 +51,17 @@
 
   <main class="app-main">
     <section class="page page-create" id="page-create" aria-labelledby="create-title">
-      <div class="page-heading create-heading"><div><div class="eyebrow"><span class="status-dot"></span>MAKE SOMETHING YOURS</div><h1 id="create-title">把一张图片，变成积木。</h1><p>从一个熟悉的形状开始，搭出属于你的想象。</p></div><span class="badge badge-subtle"><img class="icon brick-ui-icon" src="./assets/brick-sparkle.svg" data-icon="sparkle" alt="" aria-hidden="true" draggable="false" width="24" height="24">AI 图片创作</span></div>
+      <div class="page-heading create-heading"><div><div class="eyebrow"><span class="status-dot"></span>MAKE SOMETHING YOURS</div><h1 id="create-title">把你的灵感，变成积木。</h1><p>直接用文字生成，或上传图片并补充你的修改想法。</p></div><span class="badge badge-subtle"><img class="icon brick-ui-icon" src="./assets/brick-sparkle.svg" data-icon="sparkle" alt="" aria-hidden="true" draggable="false" width="24" height="24">AI 灵感创作</span></div>
       <div class="create-grid">
-        <section class="creation-input" aria-label="图片与生成设置">
-          <div class="section-number"><span>01</span><h2>带来你的灵感</h2></div>
+        <section class="creation-input" aria-label="图片、文字与生成设置">
+          <div class="section-number"><span>01</span><h2>上传参考图片 <span class="optional-label">可选</span></h2></div>
           <div class="source-input-wrap">
-            <div class="source-preview" id="source-preview"><div class="upload-prompt"><span class="upload-camera-placeholder" aria-hidden="true"></span><strong>把灵感，放在这里。</strong><span>拖入图片，或选择上传 / 拍照</span><small>JPG、PNG、WebP · 最大 15 MB</small></div></div>
+            <div class="source-preview" id="source-preview"><div class="upload-prompt"><span class="upload-camera-placeholder" aria-hidden="true"></span><strong>用图片作为创作参考。</strong><span>拖入图片，或选择上传 / 拍照<br>也可以直接在下方输入文字创作</span><small>JPG、PNG、WebP · 最大 15 MB</small></div></div>
             <div class="source-input-actions"><button type="button" class="button button-secondary" data-action="upload"><img class="icon brick-ui-icon" src="./assets/brick-upload.svg" data-icon="upload-simple" alt="" aria-hidden="true" draggable="false" width="24" height="24">上传图片</button><button type="button" class="button button-secondary" data-action="camera"><img class="icon brick-ui-icon" src="./assets/brick-camera.svg" data-icon="camera" alt="" aria-hidden="true" draggable="false" width="24" height="24">相机拍照</button><button type="button" class="button button-ghost button-small clear-source" data-action="clear-image" hidden><img class="icon brick-ui-icon" src="./assets/brick-close.svg" data-icon="x" alt="" aria-hidden="true" draggable="false" width="24" height="24">移除</button></div>
           </div>
           <input id="image-input" type="file" accept="image/*" hidden>
           <input id="capture-input" type="file" accept="image/*" capture="environment" hidden>
-          <div class="generation-settings"><div class="section-number"><span>02</span><h2>选择你的搭建方式</h2></div><div class="field-grid"><label class="field-label" for="generation-size">模型大小<select class="field-select" id="generation-size"><option value="small">小型 · 简单轮廓</option><option value="medium" selected>中型 · 丰富细节</option><option value="large">大型 · 完整表现</option></select></label><label class="field-label" for="generation-style">积木风格<select class="field-select" id="generation-style"><option value="classic" selected>经典积木</option><option value="pixel">像素风格</option></select></label></div><label class="field-label generation-prompt-label" for="generation-prompt">补充想法 <span class="optional-label">选填</span><textarea class="field-input" id="generation-prompt" rows="2" maxlength="1200" placeholder="例如：保留红色车身，增加一个展示底座。"></textarea></label><p class="generation-privacy">点击生成后，照片将发送至你配置的 AI 服务进行处理。</p></div>
+          <div class="generation-settings"><div class="section-number"><span>02</span><h2>写下你的创作想法</h2></div><label class="field-label generation-prompt-label" for="generation-prompt">文字描述或修改想法 <span class="optional-label" id="generation-prompt-hint">直接描述，或补充图片修改要求</span><textarea class="field-input" id="generation-prompt" rows="3" maxlength="1200" placeholder="例如：一座红瓦白墙的厦大校门，带有三个拱形入口。"></textarea></label><p class="generation-privacy">创作内容将发送至你配置的 AI 服务，先生成多视角参考图，再搭建积木模型。</p></div>
           <div class="generation-footer"><button type="button" id="generate-button" class="button button-primary generate-button" data-action="generate" disabled><img class="icon brick-ui-icon" src="./assets/brick-sparkle.svg" data-icon="sparkle" alt="" aria-hidden="true" draggable="false" width="24" height="24"><span>生成我的积木模型</span><img class="icon brick-ui-icon button-arrow" src="./assets/brick-arrow-up-right.svg" data-icon="arrow-up-right" alt="" aria-hidden="true" draggable="false" width="24" height="24"></button><p id="generation-status" class="generation-status" aria-live="polite"><img class="icon brick-ui-icon" src="./assets/brick-info.svg" data-icon="info" alt="" aria-hidden="true" draggable="false" width="24" height="24">正在检查生成服务…</p></div>
         </section>
         <section class="example-preview" id="builtin-example-preview" data-example-id="songen-example" aria-label="厦大 · 颂恩楼示例模型">
@@ -97,6 +108,7 @@
     <p id="generation-message" class="dialog-description" role="status" aria-live="polite">正在准备生成任务…</p>
     <progress id="generation-progress" class="generation-progress" aria-label="模型生成中"></progress>
     <ol id="generation-steps" class="generation-steps" aria-label="模型生成流程"></ol>
+    <figure id="generation-references" class="generation-references" hidden></figure>
     <p id="generation-events" class="dialog-note generation-events"></p>
     <p class="dialog-note">通常需要几分钟。收起窗口后仍会继续生成，可随时查看进度。</p>
     <div class="dialog-actions generation-actions">
@@ -109,6 +121,6 @@
   </dialog>
   <dialog id="completion-dialog" class="studio-dialog completion-dialog" aria-labelledby="completion-title"><div class="dialog-heading"><span class="eyebrow">ONE BRICK AT A TIME</span><button type="button" class="button button-icon button-ghost" data-action="close-dialog" aria-label="关闭完成提示"><img class="icon brick-ui-icon" src="./assets/brick-close.svg" data-icon="x" alt="" aria-hidden="true" draggable="false" width="24" height="24"></button></div><span class="dialog-symbol"><img class="icon brick-ui-icon" src="./assets/brick-check.svg" data-icon="check" alt="" aria-hidden="true" draggable="false" width="24" height="24"></span><h2 id="completion-title">每一块，都搭到位了。</h2><p class="dialog-description">完整模型已经呈现。收藏这件作品，<br>或进入自由编辑，继续加入你的想法。</p><div class="dialog-actions"><button type="button" class="button button-secondary" data-action="favorite"><img class="icon brick-ui-icon" src="./assets/brick-heart.svg" data-icon="heart" alt="" aria-hidden="true" draggable="false" width="24" height="24">收藏模型</button><button type="button" class="button button-primary" data-mode="edit">继续自由编辑<img class="icon brick-ui-icon" src="./assets/brick-arrow-right.svg" data-icon="arrow-right" alt="" aria-hidden="true" draggable="false" width="24" height="24"></button></div></dialog>
   <div class="toast" id="toast" role="status" aria-live="polite"><img class="icon brick-ui-icon" src="./assets/brick-success.svg" data-icon="check-circle" alt="" aria-hidden="true" draggable="false" width="24" height="24"><span></span></div>
-  <script type="module" src="./app.js"></script>
+  <script type="module" src="./app.js?v=settings-2"></script>
 </body>
 </html>

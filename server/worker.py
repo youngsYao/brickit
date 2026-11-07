@@ -19,6 +19,8 @@ from .exporter import ExportRejected, export_project
 from .providers import ProviderBudgetExceeded, ProviderRateLimited, ProviderRequestTimeout, safe_failure_details, worker_completion_provider
 from .resume import ResumeRejected, resume_conversation
 from .storage import atomic_json
+from .reference_images import ReferenceImageError, generate_references
+from .reference_context import reference_critique
 
 
 def emit(stage: str, message: str) -> None:
@@ -32,18 +34,46 @@ def build_prompt(request: dict) -> str:
         if request["style"] == "classic" else
         "Use a deliberately blocky, pixel-inspired three-dimensional LEGO sculpture with a limited color palette; do not make a flat photo mosaic."
     )
-    return (
+    reference = (
+        "The attached image is an AI-generated 2x2 multi-view reference sheet of ONE subject, "
+        "not four separate objects: top-left FRONT, top-right RIGHT SIDE, bottom-left REAR, "
+        "bottom-right FRONT THREE-QUARTER PERSPECTIVE. Build ONE connected three-dimensional subject. "
+        "Use all four views to understand its volume, roof, depth and silhouette. "
+        "Do not build the contact-sheet grid, labels, or duplicated copies. "
+        "These are synthetic design references; unseen surfaces are inferred, not verified observations. "
+        if request.get("referenceImages") else
         "Create a LEGO model of the main subject in the attached photograph. "
+    )
+    return (
+        reference +
         "Preserve its distinctive silhouette, proportions, dominant colors and recognizable details. "
-        "Invent a plausible back when it is not visible; the result is a stylized interpretation. "
+        "Use the supplied views for the back when available; otherwise infer a plausible back. The result is a stylized interpretation. "
         f"Use at least 1 and no more than {cap} real catalogued parts. {style} "
         "The model must be one connected assembly, with no collisions and no floating parts. "
         "Place the build near the origin with its lowest physical point on the ground plane. "
         "Keep all physical checks, add tests for the part-count cap and one connected component, "
         "and inspect multi-view renders before finalizing. Use a deterministic create_build(). "
         "Do not weaken the checks to finish. Do not create external files except through the provided tools.\n\n"
-        f"Additional user request: {request['prompt'].strip() or 'Match the photograph as closely as possible.'}"
+        f"Additional user request: {request['prompt'].strip() or 'Match the reference subject as closely as possible.'}"
     )
+
+
+def prepare_reference(job_dir: Path, request: dict, settings: Settings) -> tuple[Path, dict | None]:
+    """Complete image generation before any paid builder call; reuse on resume."""
+    marker = job_dir / "reference.json"
+    if marker.is_file():
+        metadata = json.loads(marker.read_text())
+        if not (job_dir / "reference.png").is_file():
+            raise ReferenceImageError("REFERENCE_MISSING", "多视角参考图不完整，请重新生成。")
+        return job_dir / "reference.png", metadata
+    if settings.image_model and not (job_dir / "resume.json").exists():
+        emit("referencing", "正在生成正面、侧面、背面和透视参考图。")
+        metadata = generate_references(job_dir, request, settings)
+        emit("referencing", "四视角参考图已完成，即将开始积木建模。")
+        return job_dir / "reference.png", metadata
+    if not (job_dir / "input.png").is_file():
+        raise ReferenceImageError("REFERENCE_MISSING", "文字输入需要先生成多视角参考图。")
+    return job_dir / "input.png", None
 
 
 def verify_completed_run(record, report) -> None:
@@ -95,6 +125,8 @@ def generation_settings(settings: Settings) -> dict:
         "maxValidations": settings.max_validations or None,
         "maxCritiqueRounds": MAX_CRITIQUE_ROUNDS,
         "maxViewpointIterations": settings.max_viewpoint_iterations,
+        "referenceImageModel": settings.image_model or None,
+        "referenceImageTimeoutSeconds": settings.image_timeout if settings.image_model else None,
     }
 
 
@@ -109,21 +141,22 @@ def run(job_dir: Path, settings: Settings) -> None:
     class ProgressNarrator(Narrator):
         def __init__(self):
             super().__init__(Console(quiet=True))
+            self.review_finished = False
 
         def run_started(self, record, config):
             emit("generating", "正在分析照片并编写积木结构。")
 
         def tool_called(self, name, arguments):
             if name in {"validate", "finalize"}:
-                emit("validating", "正在用 BrickLayer 检查碰撞、悬空和连接关系。")
+                emit("validating", "正在检查评审后修改的碰撞、悬空和连接关系。" if self.review_finished else "正在用 BrickLayer 检查碰撞、悬空和连接关系。")
             elif name == "render":
-                emit("rendering", "正在渲染模型并核对照片特征。")
+                emit("rendering", "正在渲染评审后的修改结果。" if self.review_finished else "正在渲染模型，检查外观与观察角度。")
             elif name in {"write_build", "edit_build", "insert_build", "multi_edit_build"}:
-                emit("generating", "正在搭建模型并根据反馈调整零件。")
+                emit("generating", "视觉评审已完成（1/1 轮），正在修改模型。" if self.review_finished else "正在搭建模型并根据反馈调整零件。")
 
         def tool_finished(self, name, outcome):
             if name == "validate" and not outcome.ok:
-                emit("generating", "校验发现问题，AI 正在修正结构。")
+                emit("generating", "评审后的修改尚未通过结构检查，正在修正。" if self.review_finished else "校验发现问题，AI 正在修正结构。")
 
         def model_message(self, text):
             pass
@@ -132,16 +165,20 @@ def run(job_dir: Path, settings: Settings) -> None:
             pass
 
         def critique_started(self, round_num, total):
-            emit("rendering", "正在比较参考照片与模型预览。")
+            emit("rendering", f"正在进行视觉评审（第 {round_num}/{total} 轮），匹配观察角度并对照参考图。")
 
         def critique_result(self, result):
+            self.review_finished = True
             if not result.done:
-                emit("generating", "正在根据视觉反馈改善模型。")
+                emit("generating", "视觉评审已完成（1/1 轮），正在按反馈修改模型。")
 
     request = json.loads((job_dir / "request.json").read_text())
+    reference_path, reference_metadata = prepare_reference(job_dir, request, settings)
+    if reference_metadata:
+        request["referenceImages"] = True
     config = agent_config(job_dir, settings)
-    record = Record.create(config, prompt=build_prompt(request), image=job_dir / "input.png")
-    with resume_conversation(record, job_dir, settings.records_dir) as resumed, worker_completion_provider(
+    record = Record.create(config, prompt=build_prompt(request), image=reference_path)
+    with reference_critique(job_dir), resume_conversation(record, job_dir, settings.records_dir) as resumed, worker_completion_provider(
         settings, checkpoint_path=job_dir / "conversation-checkpoint.json",
         on_wait=lambda seconds: emit("generating", f"模型服务要求等待约 {max(1, math.ceil(seconds / 60))} 分钟，恢复后将自动继续。"),
     ) as accounting:
@@ -158,6 +195,9 @@ def run(job_dir: Path, settings: Settings) -> None:
                 atomic_json(job_dir / "provider-billing.json", accounting.snapshot())
     billing = {"providerBilling": accounting.snapshot()} if accounting is not None else {}
     billing["generationSettings"] = generation_settings(settings)
+    if reference_metadata:
+        billing["referenceImages"] = reference_metadata
+        billing["generationSettings"]["referenceImageModel"] = reference_metadata.get("model")
     if resumed is not None:
         billing["resumedFrom"] = resumed
     verify_completed_run(record, report)
@@ -175,7 +215,8 @@ def run(job_dir: Path, settings: Settings) -> None:
         build = from_ldraw(ldraw_bytes.decode("utf-8"))
     if build.brick_count != report.report.brick_count:
         raise ExportRejected("INCOMPLETE_EXPORT", "导出的零件数与已校验模型不一致。")
-    source_image = "data:image/png;base64," + __import__("base64").b64encode((job_dir / "input.png").read_bytes()).decode()
+    source_path = job_dir / "input.png" if (job_dir / "input.png").is_file() else reference_path
+    source_image = "data:image/png;base64," + __import__("base64").b64encode(source_path.read_bytes()).decode()
     project = export_project(
         build, job_id=job_dir.name, prompt=request["prompt"], size=request["size"],
         style=request["style"], source_image=source_image, max_parts=PART_LIMITS[request["size"]],
@@ -214,6 +255,8 @@ def main() -> int:
         run(job_dir, Settings.from_env())
         return 0
     except ExportRejected as exc:
+        atomic_json(job_dir / "outcome.json", {"ok": False, "code": exc.code, "message": str(exc)})
+    except ReferenceImageError as exc:
         atomic_json(job_dir / "outcome.json", {"ok": False, "code": exc.code, "message": str(exc)})
     except ResumeRejected:
         atomic_json(job_dir / "outcome.json", {"ok": False, "code": "RESUME_REJECTED", "message": "无法恢复该任务，请使用同一照片与生成设置重试。"})

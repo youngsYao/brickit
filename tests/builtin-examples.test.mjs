@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { UNIT, BUILTIN_EXAMPLES, createExampleProject, resolveOriginalPieces, registerProjectParts, inventoryFor, orderPieces } from '../dist/data.js';
+import { UNIT, BUILTIN_EXAMPLES, createExampleProject, loadExampleProject, resolveOriginalPieces, registerProjectParts, inventoryFor, orderPieces } from '../dist/data.js';
+import { readFile } from 'node:fs/promises';
 
-test('the only bundled example is the default campus scene and has an independent baseline', () => {
-  assert.deepEqual(BUILTIN_EXAMPLES.map(example => example.id), ['songen-example']);
+test('the default campus scene and both generated examples are available', () => {
+  assert.deepEqual(BUILTIN_EXAMPLES.map(example => example.id), ['songen-example','songen-generated-example','xmu-gate-example']);
   const building=createExampleProject();
   assert.equal(building.id, 'songen-example');
   assert.equal(building.title, '厦大 · 颂恩楼');
@@ -20,6 +21,42 @@ test('the only bundled example is the default campus scene and has an independen
   assert.deepEqual(createExampleProject('songen-example').pieces,original);
   assert.throws(()=>createExampleProject('apple-example'), /内置示例/);
   assert.throws(()=>createExampleProject('missing-example'), /内置示例/);
+});
+
+test('generated examples preserve their genuine meshes, poses, provenance and standalone downloads', async () => {
+  const previousFetch=globalThis.fetch;
+  const requests=[];
+  globalThis.fetch=async url=>{
+    requests.push(url);
+    const data=JSON.parse(await readFile(new URL('../dist/'+url.replace(/^\.\//,''),import.meta.url),'utf8'));
+    return {ok:true,json:async()=>data};
+  };
+  try {
+    for(const [id,count,jobId] of [
+      ['songen-generated-example',589,'7fc9523fa9c54d5f85517c69ffc0392e'],
+      ['xmu-gate-example',246,'778fe03efefa48b29ee0eeb886284236'],
+    ]) {
+      const metadata=BUILTIN_EXAMPLES.find(item=>item.id===id);
+      const bundled=JSON.parse(await readFile(new URL('../dist/'+metadata.projectUrl.replace(/^\.\//,''),import.meta.url),'utf8'));
+      const project=await loadExampleProject(id);
+      assert.equal(project.source,'example');assert.equal(project.draft,false);
+      assert.equal(project.pieces.length,count);assert.equal(project.generation.jobId,jobId);
+      assert.deepEqual(project.pieces,bundled.pieces);assert.deepEqual(project.parts,bundled.parts);
+      assert.deepEqual(project.originalPieces,bundled.pieces);
+      assert.doesNotThrow(()=>registerProjectParts(project));
+      assert.equal(inventoryFor(project.pieces).reduce((sum,row)=>sum+row.count,0),count);
+      assert.equal(project.generation.validation.components,1);
+      for(const url of Object.values(project.generation.artifacts)){
+        assert.ok(url.startsWith('./examples/'));
+        assert.ok((await readFile(new URL('../dist/'+url.replace(/^\.\//,''),import.meta.url))).length>0);
+      }
+      project.pieces[0].color='#000000';project.parts[0].mesh.positions[0]=999;
+      const again=await loadExampleProject(id);
+      assert.deepEqual(again.pieces,bundled.pieces);assert.deepEqual(again.parts,bundled.parts);
+      assert.deepEqual(await resolveOriginalPieces({id:'saved-'+id,exampleId:id,source:'user',draft:true,pieces:[]}),bundled.pieces);
+    }
+    assert.equal(requests.length,2,'each mesh file is fetched once and reused on subsequent opens');
+  } finally {globalThis.fetch=previousFetch;}
 });
 
 test('restoring a saved building draft resolves the building rather than the legacy apple', async () => {

@@ -67,10 +67,14 @@ def _load(job_dir: Path, records_dir: Path) -> tuple[dict, list[dict], str] | No
     status = _json(old / "job.json", old)
     if status.get("status") not in {"failed", "cancelled"}:
         raise ResumeRejected("只能继续已停止且未完成的生成任务。")
-    original_image = _read(old / "input.png", old)
-    image = _read(current / "input.png", current)
-    if hashlib.sha256(original_image).digest() != hashlib.sha256(image).digest():
-        raise ResumeRejected("恢复任务与原始照片不一致，未开始生成。")
+    for filename in ("input.png", "reference.png", "reference.json"):
+        before, after = old / filename, current / filename
+        if before.exists() != after.exists():
+            raise ResumeRejected("恢复任务与原始图片或参考图不一致，未开始生成。")
+        if before.exists() and hashlib.sha256(_read(before, old)).digest() != hashlib.sha256(_read(after, current)).digest():
+            raise ResumeRejected("恢复任务与原始图片或参考图不一致，未开始生成。")
+    image_name = "reference.png" if (old / "reference.png").is_file() else "input.png"
+    image = _read(current / image_name, current)
     previous_request = _json(old / "request.json", old)
     request = _json(current / "request.json", current)
     if any(previous_request.get(key) != request.get(key) for key in ("prompt", "size", "style")):
