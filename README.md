@@ -256,7 +256,25 @@ npm run test:catalog
 
 `Project.parts` 保存生成模型引用的网格目录，`Project.generation` 保存任务来源和原始检查信息；这些字段与原图、完整 Piece 姿态、原始 baseline 一起持久化。生成服务没有账号同步功能。
 
-## 主要文件
+## 项目目录
+
+```text
+brick-it/
+├── dist/                 # 可直接提供服务的前端、素材及内置示例
+├── server/               # 生成服务与后端测试（server/tests/）
+├── scripts/              # 零件库安装、任务恢复与示例打包工具
+├── tests/                # 前端数据测试与浏览器验证
+├── docs/                 # 示例说明、归因与许可
+│   └── design/           # 设计方向及素材生成提示词
+├── .env.example          # 本机配置模板
+├── ldraw-library.json    # 固定零件库快照
+├── package.json          # 前端依赖与运行命令
+└── pyproject.toml        # 后端依赖（uv.lock 固定版本）
+```
+
+`.env`、`.brick-it-records/`、`node_modules/` 和 `.venv/` 是本机配置、生成记录与依赖，不提交到仓库。测试截图、参考图测试和导出文件统一写入 `output/`，该目录按需创建并由 Git 忽略。正式内置示例保存在 `dist/examples/`，随项目提交。
+
+主要模块：
 
 - `dist/index.html` / `dist/style.css`：响应式页面与工作台布局。
 - `dist/app.js` / `dist/generation.js`：页面状态、生成任务、编辑、作品和导出流程。
@@ -268,7 +286,7 @@ npm run test:catalog
 
 ## 品牌与进度图
 
-`dist/assets/brand-brick.png` 与 `brand-lettering.png` 使用内置 ImageGen 从提供的品牌稿中分别提取，为独立透明素材；原始组合稿保留在 `brand-wordmark.png`。页头使用两个图片元素组合，桌面间距为 16px，平板为 14px，手机为 12px，窄屏为 10px，尺寸也随屏幕调整。`brand-mark.svg` 与 `favicon.svg` 保留供进度图占位和标签页使用。素材处理提示词见 `outputs/brand-extraction-prompts.txt`。
+`dist/assets/brand-brick.png` 与 `brand-lettering.png` 使用内置 ImageGen 从提供的品牌稿中分别提取，为独立透明素材；原始组合稿保留在 `brand-wordmark.png`。页头使用两个图片元素组合，桌面间距为 16px，平板为 14px，手机为 12px，窄屏为 10px，尺寸也随屏幕调整。`brand-mark.svg` 与 `favicon.svg` 保留供进度图占位和标签页使用。素材处理提示词见 `docs/design/brand-extraction-prompts.txt`。
 
 进度条保留原生 range 输入，通过独立的完整模型透明 PNG 覆盖默认圆点。`model.js` 的 `progressThumbnail()` 输出 160 × 160 缩略图，排除底板、网格和选择状态，生成后恢复原场景；`app.js` 仅在打开或修改模型时刷新并缓存，播放与拖动期间不重复渲染小图。
 
@@ -276,7 +294,7 @@ npm run test:catalog
 
 ## 本地 UI 素材
 
-`dist/assets/upload-stationery.png` 使用内置 ImageGen 根据提供的信纸参考图重新生成，移除右下角水印，调整为接近页面 `#f7f6f2`、面板 `#fcfbf7` 的暖白底色和浅灰绿边线，外围保留透明。它作为上传框底层背景，真实的文字、按钮、预览与拖放区域继续由 HTML/CSS 实现。生成提示词见 `outputs/ui-stationery-prompt.txt`。
+`dist/assets/upload-stationery.png` 使用内置 ImageGen 根据提供的信纸参考图重新生成，移除右下角水印，调整为接近页面 `#f7f6f2`、面板 `#fcfbf7` 的暖白底色和浅灰绿边线，外围保留透明。它作为上传框底层背景，真实的文字、按钮、预览与拖放区域继续由 HTML/CSS 实现。生成提示词见 `docs/design/ui-stationery-prompt.txt`。
 
 相机模型与颜色、方向控件使用原生 SVG 几何绘制。方向图按同一块示例积木的真实 Y 轴朝向投影，凸点按目录颜色着色，选中状态、颜色名称和角度文字均由当前编辑状态更新。
 

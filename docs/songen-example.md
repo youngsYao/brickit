@@ -12,7 +12,7 @@
 - `dist/assets/songen-reference.jpg`：用户提供的正面照片，用于工作台「原图对照」。
 - `dist/assets/songen-study.png`：内置 ImageGen 工具根据原照片生成的正面、前侧面与后侧面建筑研究图。生成图仅用于辅助推定，未直接当作三维模型或预览。
 - `dist/assets/songen-preview.png`：由实际积木模型渲染的首页预览。
-- `output/songen/`：桌面与手机界面、模型和展开视图的检查截图。
+- `output/playwright/generated-examples/`：运行 `tests/generated-examples-ui.py` 时生成的示例界面和模型检查截图，不随 Git 提交。
 
 颂恩楼正面、左右红白楼群及湖岸关系以用户照片为依据；照片未覆盖的侧面与背面、周边建筑的进深和湖面的范围采用一致的窗格、石材和校园景观语言推定，并非测绘复原。模型使用系统既有的数字示例砖及微缩装饰尺寸，不标记为官方 LDraw 零件。模型是独立积木数据，可播放、编辑、导出图片和零件清单；示例与修改稿保留各自的原始模型，还原时保留整套楼群与湖景。
 

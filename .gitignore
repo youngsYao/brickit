@@ -1,27 +1,27 @@
+# Local dependencies and generated caches
 node_modules/
-.openai/*.local.*
-.openai/execution-profile.json
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.DS_Store
+.playwright-cli/
+.playwright-mcp/
+
+# Generated previews, exports, and test screenshots
+/output/
+/outputs/
 *.tgz
 *.tar.gz
-.DS_Store
-.playwright-mcp/
-outputs/*.png
-outputs/*.jpg
-outputs/*.webp
 
 # Local generation runtime, secrets, and uploaded photos
 .env
 .env.*
 !.env.example
-.venv/
-__pycache__/
-.pytest_cache/
-*.pyc
 .brickit/
 records/
 
 .brick-it-records/
-output/playwright/
 
 # The library is distributed as a Release asset, never as Git source files.
 /ldraw/
