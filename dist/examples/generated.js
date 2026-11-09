@@ -7,6 +7,8 @@ export const GENERATED_EXAMPLES = Object.freeze([
     "selectorHint": "AI 生成",
     "description": "589 颗真实零件搭出的颂恩楼，保留塔身、玻璃窗与红瓦屋顶。",
     "pieceCount": 589,
+    "createdAt": "2026-11-06T12:08:09.209995+00:00",
+    "updatedAt": "2026-11-06T12:08:09.209995+00:00",
     "projectUrl": "./examples/generated-songen/project.json",
     "sourceImage": "./examples/generated-songen/source.png",
     "thumbnail": "./examples/generated-songen/thumbnail.jpg"
@@ -18,6 +20,8 @@ export const GENERATED_EXAMPLES = Object.freeze([
     "selectorHint": "AI 生成",
     "description": "246 颗真实零件搭出的厦大校门，包含三开间入口与高低错落的屋顶。",
     "pieceCount": 246,
+    "createdAt": "2026-11-06T16:04:00.278250+00:00",
+    "updatedAt": "2026-11-06T16:23:23.169576+00:00",
     "projectUrl": "./examples/generated-gate/project.json",
     "sourceImage": "./examples/generated-gate/source.png",
     "thumbnail": "./examples/generated-gate/thumbnail.jpg"

@@ -48,8 +48,17 @@ def main():
             base = f"http://127.0.0.1:{server.server_port}"
             page.goto(base, wait_until="networkidle")
             expect(page.locator("body")).to_have_attribute("data-ready", "true")
+            page.wait_for_function("window.brickit?.state.works === 2")
             assert not model_fetches, "The home page must not eagerly fetch multi-megabyte meshes"
             expect(page.locator(".example-selector button")).to_have_count(3)
+            page.locator("button[data-page='works']").first.click()
+            expect(page.locator("#works-grid .work-card")).to_have_count(2)
+            expect(page.locator("#works-grid")).to_contain_text("589 颗积木")
+            expect(page.locator("#works-grid")).to_contain_text("246 颗积木")
+            expect(page.locator("#works-grid .badge-subtle").filter(has_text="AI 创作")).to_have_count(2)
+            assert not model_fetches, "Listing saved works must not fetch mesh files"
+            page.screenshot(path=str(output / "saved-ai-works.png"), full_page=True)
+            page.locator("[data-action='new']").first.click()
             for example_id, folder, count, job in [
                 ("songen-generated-example", "generated-songen", 589, "7fc9523fa9c54d5f85517c69ffc0392e"),
                 ("xmu-gate-example", "generated-gate", 246, "778fe03efefa48b29ee0eeb886284236"),
@@ -62,8 +71,8 @@ def main():
                 page.locator("#builtin-example-preview").screenshot(path=str(output / f"{folder}-home.png"))
                 page.locator("#open-builtin-example").click()
                 page.wait_for_function("id => window.brickit.project?.id === id", arg=example_id)
-                expect(page.locator("#stage[data-ready='true']")).to_be_visible()
                 page.wait_for_function("count => window.brickit.state.engine?.count === count", arg=count)
+                expect(page.locator("#stage[data-ready='true']")).to_be_visible()
                 actual = page.evaluate("window.brickit.project")
                 assert actual["source"] == "example" and actual["draft"] is False
                 assert actual["generation"]["jobId"] == job
@@ -90,7 +99,8 @@ def main():
                     assert Path(event.value.path()).read_bytes() == (ROOT / "dist/examples" / folder / filename).read_bytes()
                 before_save = page.evaluate("window.brickit.state.works")
                 page.locator("[data-action='save']").first.click()
-                page.wait_for_function("n=>window.brickit.state.works>n", arg=before_save)
+                expect(page.locator("#toast")).to_contain_text("版本已保存到")
+                assert page.evaluate("window.brickit.state.works") == before_save, "Saving an existing AI work must not create duplicates"
                 page.reload(wait_until="networkidle")
                 page.wait_for_function("id=>window.brickit.project?.id===id", arg=example_id)
                 assert page.evaluate("window.brickit.project.originalPieces.length") == count
@@ -99,7 +109,32 @@ def main():
                 page.screenshot(path=str(output / f"{folder}-mobile.png"), full_page=True)
                 page.set_viewport_size({"width": 1440, "height": 1050})
                 page.locator("[data-action='new']").first.click()
+                page.locator("button[data-page='works']").first.click()
+                page.locator(f"#works-grid .work-thumb[data-project-id='{example_id}']").click()
+                page.wait_for_function("id=>window.brickit.project?.id===id&&window.brickit.project.source==='ai'", arg=example_id)
+                assert sorted(page.evaluate("window.brickit.project.pieces"), key=lambda p: p["id"]) == sorted(expected["pieces"], key=lambda p: p["id"])
+                page.locator("[data-action='new']").first.click()
                 checks.append({"id": example_id, "pieces": count, "offline": True, "playback": True, "downloads": True, "reload": True})
+            page.locator("button[data-page='works']").first.click()
+            favorite = page.locator("#works-grid [data-action='favorite-work'][data-project-id='xmu-gate-example']")
+            favorite.click()
+            expect(favorite).to_have_attribute("aria-pressed", "true")
+            page.locator("#works-filter").select_option("favorites")
+            expect(page.locator("#works-grid .work-card")).to_have_count(1)
+            page.reload(wait_until="networkidle")
+            expect(page.locator("#works-grid .work-card")).to_have_count(2)
+            expect(favorite).to_have_attribute("aria-pressed", "true")
+            page.locator("#works-grid [data-action='delete-work'][data-project-id='xmu-gate-example']").click()
+            page.locator("#delete-dialog [data-action='confirm-delete-work']").click()
+            expect(page.locator("#works-grid .work-card")).to_have_count(1)
+            page.reload(wait_until="networkidle")
+            expect(page.locator("#works-grid .work-card")).to_have_count(1)
+            # Removal is local to this browser; a fresh browser still gets both.
+            fresh = browser.new_page()
+            fresh.route("**/api/**", api)
+            fresh.goto(base, wait_until="networkidle")
+            fresh.wait_for_function("window.brickit?.state.works === 2")
+            fresh.close()
             assert not errors, errors
             assert not mutations and not api_artifacts, (mutations, api_artifacts)
             browser.close()

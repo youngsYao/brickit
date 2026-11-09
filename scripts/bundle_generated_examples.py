@@ -28,6 +28,7 @@ def main() -> None:
     for definition in EXAMPLES:
         source = args.records_dir / definition["jobId"]
         project = json.loads((source / "project.json").read_text())
+        job = json.loads((source / "job.json").read_text())
         report = json.loads((source / "artifacts/report.json").read_text())
         validation = project["generation"]["validation"]
         assert validation["ok"] and validation["collisions"] == validation["floating"] == 0 and validation["components"] == 1
@@ -52,6 +53,8 @@ def main() -> None:
                    "settings": project["settings"], "generation": public_generation}
         (destination / "project.json").write_text(json.dumps(bundled, ensure_ascii=False, allow_nan=False, separators=(",", ":")))
         manifest.append({key: value for key, value in definition.items() if key not in {"folder", "jobId"}} | {
+            "createdAt": project.get("createdAt") or job["createdAt"],
+            "updatedAt": project.get("updatedAt") or job["updatedAt"],
             "projectUrl": prefix + "project.json", "sourceImage": prefix + "source.png", "thumbnail": prefix + "thumbnail.jpg",
         })
         print(f"Bundled {definition['title']}: {definition['pieceCount']} pieces")

@@ -356,7 +356,7 @@ def test_unavailable(page, fixture, base_url, checks):
         page.locator("#generate-button").click()
     assert len(fixture.posts) == 0, "An unavailable backend does not start a job"
     assert_no_import(page)
-    page.locator("[data-action='open-example']").first.click()
+    page.locator("#open-builtin-example").click()
     page.wait_for_function("window.brickit.project?.id === 'songen-example'")
     expect(page.locator("#stage[data-ready='true']")).to_be_visible(timeout=20000)
     checks.append("服务未配置时明确说明原因、不会假生成，颂恩楼示例仍可使用")

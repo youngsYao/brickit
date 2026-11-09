@@ -6,4 +6,6 @@
 - `brand-extraction-prompts.txt`：品牌积木标记与字标拆分的生成提示词。
 - `ui-stationery-prompt.txt`：上传区信纸背景的生成提示词。
 
+上传区信纸现使用 `dist/assets/upload-stationery.svg`，由矩形、圆形、渐变和阴影绘制；页面通过原生 SVG `<use>` 复用。外框随上传区尺寸变化，凸点保持圆形。原 `upload-stationery.png` 与生成提示词保留为设计历史。
+
 设计参考图、素材中间稿和手工测试截图不作为运行资源提交。浏览器测试输出统一位于项目根目录的 `output/`，由测试脚本按需创建并由 Git 忽略。
