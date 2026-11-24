@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from server.config import Settings
 from server.exporter import export_project
+from server.mesh_assets import PostgresMeshStore
 from server.storage import JOB_ID, JobStore, atomic_json, now
 
 
@@ -85,10 +86,13 @@ def main() -> None:
                            for name in ("build.py", "build.ldr", "build.png")},
     })
     atomic_json(destination / "project.json", project)
+    store = JobStore(settings.records_dir, mesh_store=PostgresMeshStore.for_url(settings.parts_database_url))
+    if settings.parts_backend == "postgres":
+        store.compact_project(job_id)
     atomic_json(destination / "outcome.json", {"ok": True, "kind": "validated_snapshot_import"})
     stamp = now()
     message = "已载入最近一次通过结构检查的版本，可查看和编辑。"
-    JobStore(settings.records_dir).save(job_id, {
+    store.save(job_id, {
         "id": job_id, "kind": "validated_snapshot_import", "sourceJobId": args.job_id,
         "status": "completed", "stage": "completed", "message": message,
         "createdAt": stamp, "updatedAt": stamp,

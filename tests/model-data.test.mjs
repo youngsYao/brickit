@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 import {
   CATALOG, UNIT, canPlace, cloneProject, createExampleProject,
   createPiece, findPart, getCatalog, inventoryFor, orderPieces, registerProjectParts, resolveOriginalPieces,
@@ -120,43 +122,75 @@ test('retired apple saved works retain their restoration data and playback order
   assert.doesNotThrow(() => registerProjectParts({ ...createExampleProject(), originalPieces: null }));
 });
 
-// A small asynchronous IndexedDB double exercises the actual library adapter,
-// transaction boundary and structured-clone persistence rather than localStorage.
-function memoryIndexedDB() {
-  const saved = new Map();
-  const database = {
-    objectStoreNames: { contains: () => true }, close() {},
-    transaction() {
-      const transaction = {};
-      const operation = action => {
-        const request = {};
-        queueMicrotask(() => {
-          request.result = action(); request.onsuccess?.();
-          queueMicrotask(() => transaction.oncomplete?.());
-        });
-        return request;
-      };
-      transaction.objectStore = () => ({
-        put: value => operation(() => { saved.set(value.id, structuredClone(value)); return value.id; }),
-        get: id => operation(() => structuredClone(saved.get(id))),
-        getAll: () => operation(() => structuredClone([...saved.values()])),
-        delete: id => operation(() => saved.delete(id)),
-      });
-      return transaction;
-    },
-  };
-  return { open() { const request = {}; queueMicrotask(() => { request.result = database; request.onsuccess?.(); }); return request; } };
+function resultOf(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
 }
 
-test('IndexedDB round trip retains meshes, full poses, baseline and official evidence', async () => {
+test('IndexedDB upgrades inline projects and reuses meshes while preserving poses, baselines and inventory', async () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'indexedDB');
-  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: memoryIndexedDB() });
+  Object.defineProperty(globalThis, 'indexedDB', { configurable: true, value: new IDBFactory() });
+  let db;
   try {
-    const data = await import('../dist/data.js?indexeddb-round-trip');
     const project = officialProject();
+    project.parts[0].mesh.positions[6] = -0;
+    project.parts[0].mesh.detail = { label: 'legacy' };
+    const draft = officialProject('old-draft');
+    draft.parentId = project.id;
+    draft.rootId = project.id;
+    draft.draft = true;
+    delete draft.originalPieces;
+    draft.parts[0].name = 'Edited part label';
+    draft.parts[0].mesh.positions[6] = .2;
+    draft.pieces[0].color = '#ffff00';
+    draft.pieces[0].colorCode = 14;
+    const open = indexedDB.open('brick-it-library', 1);
+    open.onupgradeneeded = () => {
+      const projects = open.result.createObjectStore('projects', { keyPath: 'id' });
+      projects.put(project);
+      projects.put(draft);
+    };
+    (await resultOf(open)).close();
+    const data = await import('../dist/data.js?indexeddb-round-trip');
+    await data.library.list();
+    db = await resultOf(indexedDB.open('brick-it-library'));
+    const read = (store, operation) => resultOf(operation(db.transaction(store).objectStore(store)));
+    const rawProject = id => read('projects', store => store.get(id));
+    const assets = () => read('meshAssets', store => store.getAll());
+    assert.equal(db.version, 2);
+    assert.deepEqual((await rawProject(project.id)).parts, project.parts, 'listing leaves v1 records inline');
+
+    const oldPut = IDBObjectStore.prototype.put;
+    try {
+      IDBObjectStore.prototype.put = function (...args) {
+        if (this.name === 'meshAssets') throw new DOMException('Test quota error', 'QuotaExceededError');
+        return oldPut.apply(this, args);
+      };
+      assert.deepEqual((await data.library.get(project.id)).parts, project.parts);
+      assert.deepEqual((await rawProject(project.id)).parts, project.parts, 'failed migration leaves the original record intact');
+      assert.equal((await assets()).length, 0);
+    } finally {
+      IDBObjectStore.prototype.put = oldPut;
+    }
+
+    const migrated = await data.library.get(draft.id);
+    assert.deepEqual(migrated.originalPieces, project.originalPieces);
+    assert.deepEqual(migrated.originalParts, project.parts);
+    assert.deepEqual(migrated.parts, draft.parts);
+    assert.deepEqual(data.inventoryFor(migrated.pieces, migrated.parts), data.inventoryFor(draft.pieces, draft.parts));
+    const rawDraft = await rawProject(draft.id);
+    assert.match(rawDraft.parts[0].meshSha256, /^[0-9a-f]{64}$/);
+    assert.equal(rawDraft.parts[0].mesh, undefined);
+    assert.notEqual(rawDraft.parts[0].meshSha256, rawDraft.originalParts[0].meshSha256);
+
     const stored = await data.library.put(project);
     assert.equal(data.library.backend, 'indexeddb');
     assert.equal(stored.source, 'brickwright');
+    assert.equal((await rawProject(project.id)).parts[0].meshSha256, rawDraft.originalParts[0].meshSha256);
+    assert.equal((await assets()).length, 2);
+    for (const asset of await assets()) assert.equal(createHash('sha256').update(new Uint8Array(asset.payload)).digest('hex'), asset.sha256);
     stored.pieces[0].sourcePlacement.rotation[0] = 99;
     stored.parts[0].mesh.positions[0] = 99;
     const loaded = await data.library.get(project.id);
@@ -166,11 +200,54 @@ test('IndexedDB round trip retains meshes, full poses, baseline and official evi
     assert.deepEqual(loaded.metadata, project.metadata);
     assert.deepEqual(loaded.validation, project.validation);
     assert.deepEqual(data.findPart('ldraw-3001').mesh, project.parts[0].mesh);
-    assert.equal((await data.library.list()).length, 1);
     await data.library.remove(project.id);
     assert.equal(await data.library.get(project.id), null);
+    const afterDelete = await data.library.get(draft.id);
+    assert.deepEqual(await data.resolveOriginalPieces(afterDelete), project.originalPieces);
+    assert.deepEqual(afterDelete.originalParts, project.parts);
+    assert.equal((await assets()).length, 2);
+    await data.library.remove(draft.id);
+    assert.equal((await assets()).length, 0);
+
+    for (const folder of ['generated-gate', 'generated-songen']) {
+      const example = JSON.parse(readFileSync(new URL(`../dist/examples/${folder}/project.json`, import.meta.url)));
+      await data.library.put(example);
+      const saved = await data.library.get(example.id);
+      assert.deepEqual(saved.pieces, example.pieces);
+      assert.deepEqual(saved.parts, example.parts);
+    }
+    assert.equal((await assets()).length, 71, 'both approved works share exactly 71 mesh payloads');
   } finally {
+    db?.close();
     if (previous) Object.defineProperty(globalThis, 'indexedDB', previous);
     else delete globalThis.indexedDB;
+  }
+});
+
+test('localStorage fallback migrates an inline record and shares its binary mesh across versions', async () => {
+  const key = 'brick.it.library.v1';
+  const previous = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const legacy = officialProject('fallback-source');
+  const version = officialProject('fallback-version');
+  version.parts[0].name = 'Version label';
+  const records = new Map([[key, JSON.stringify({ version: 1, projects: [legacy] })]]);
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
+    getItem: id => records.get(id) ?? null,
+    setItem: (id, value) => records.set(id, String(value)),
+  } });
+  try {
+    const { library } = await import('../dist/data.js');
+    assert.deepEqual((await library.get(legacy.id)).parts, legacy.parts);
+    await library.put(version);
+    assert.equal(library.backend, 'localstorage');
+    const stored = JSON.parse(records.get(key));
+    assert.equal(stored.version, 2);
+    assert.equal(Object.keys(stored.meshes).length, 1);
+    assert.equal(stored.projects[0].parts[0].meshSha256, stored.projects[1].parts[0].meshSha256);
+    await library.remove(legacy.id);
+    assert.deepEqual((await library.get(version.id)).parts, version.parts);
+  } finally {
+    if (previous) Object.defineProperty(globalThis, 'localStorage', previous);
+    else delete globalThis.localStorage;
   }
 });

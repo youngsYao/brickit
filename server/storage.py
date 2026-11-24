@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
 
+from .mesh_assets import MESH_REFERENCE, MeshStorageError, PostgresMeshStore
+
+LOGGER = logging.getLogger(__name__)
 JOB_ID = re.compile(r"^[a-f0-9]{32}$")
 TERMINAL = {"completed", "failed", "cancelled"}
 
@@ -22,8 +26,9 @@ def atomic_json(path: Path, value: dict) -> None:
 
 
 class JobStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, mesh_store: PostgresMeshStore | None = None):
         self.root = root
+        self.mesh_store = mesh_store
         root.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     def path(self, job_id: str) -> Path:
@@ -35,13 +40,35 @@ class JobStore:
         try:
             record = json.loads((self.path(job_id) / "job.json").read_text())
             if include_result and record["status"] == "completed":
-                record["result"] = json.loads((self.path(job_id) / "project.json").read_text())
+                record["result"] = self.read_project(job_id)
             return record
         except FileNotFoundError as exc:
             raise KeyError(job_id) from exc
 
     def save(self, job_id: str, value: dict) -> None:
         atomic_json(self.path(job_id) / "job.json", value)
+
+    def read_project(self, job_id: str) -> dict:
+        project = json.loads((self.path(job_id) / "project.json").read_text(encoding="utf-8"))
+        if self.mesh_store is not None:
+            return self.mesh_store.restore_project(project)
+        if any(MESH_REFERENCE in part for part in project.get("parts", [])):
+            raise MeshStorageError("PostgreSQL connection is required to restore this project")
+        return project
+
+    def compact_project(self, job_id: str) -> None:
+        if self.mesh_store is None:
+            return
+        path = self.path(job_id) / "project.json"
+        try:
+            original = json.loads(path.read_text(encoding="utf-8"))
+            compact = self.mesh_store.reference_project(original)
+            if compact is not original:
+                atomic_json(path, compact)
+        except (MeshStorageError, OSError, ValueError) as exc:
+            # The worker already published a complete inline snapshot. Keep it
+            # usable when asset storage is temporarily unavailable.
+            LOGGER.warning("Keeping generation project inline (%s)", type(exc).__name__)
 
     def update(self, job_id: str, status: str, message: str, *, error: dict | None = None) -> dict:
         record = self.read(job_id, include_result=False)

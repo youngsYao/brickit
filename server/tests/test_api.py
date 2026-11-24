@@ -13,9 +13,11 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
+from scripts.import_mesh_assets import import_bundled_meshes
 from server.app import create_app
 from server.config import Settings
 from server.jobs import JobManager
+from server.mesh_assets import MESH_REFERENCE
 from server.schemas import GenerationRequest
 from server.storage import atomic_json
 
@@ -176,7 +178,14 @@ def test_restart_does_not_resume_or_charge_interrupted_work(settings):
     assert manager.tasks == {}
 
 
-def test_completed_job_delivers_real_sdk_mesh_and_allowlisted_artifacts(settings, monkeypatch):
+@pytest.mark.parametrize("backend", ["local", "postgres"])
+def test_completed_job_delivers_real_sdk_mesh_and_allowlisted_artifacts(settings, monkeypatch, backend):
+    if backend == "postgres":
+        database_url = os.environ.get("BRICK_IT_TEST_PARTS_DATABASE_URL")
+        if not database_url:
+            pytest.skip("Set BRICK_IT_TEST_PARTS_DATABASE_URL to a dedicated PostgreSQL test database")
+        import_bundled_meshes(database_url)
+        settings = replace(settings, parts_backend=backend, parts_database_url=database_url)
     # This local child replaces the paid model call, not the physics/geometry.
     # It really creates and exports two attached catalog bricks with BrickLayer.
     monkeypatch.setattr(Settings, "capabilities", lambda self: {"available": True, "reason": "ready"})
@@ -215,9 +224,19 @@ atomic_json(path/"outcome.json",{"ok":True})
         assert job["result"]["generation"]["validation"]["ok"]
         assert len(job["result"]["pieces"]) == 2
         assert len(job["result"]["parts"][0]["mesh"]["positions"]) > 100
+        assert MESH_REFERENCE not in job["result"]["parts"][0]
+        saved = json.loads((settings.records_dir / job_id / "project.json").read_text())
+        if backend == "postgres":
+            assert MESH_REFERENCE in saved["parts"][0]
+            assert "mesh" not in saved["parts"][0]
+        else:
+            assert saved == job["result"]
         ldraw = client.get(f"/api/generations/{job_id}/artifacts/build.ldr")
         assert ldraw.status_code == 200 and ldraw.text.count("3001.dat") == 2
         assert "attachment" in ldraw.headers["content-disposition"]
         assert client.get(f"/api/generations/{job_id}/artifacts/meta.json").status_code == 404
         assert client.get(f"/api/generations/{job_id}/artifacts/report.json").json()["components"] == 1
     assert children[0].returncode == 0
+    if backend == "postgres":
+        with TestClient(create_app(replace(settings, parts_backend="local")), base_url="http://localhost:4173") as client:
+            assert client.get(f"/api/generations/{job_id}").json() == job

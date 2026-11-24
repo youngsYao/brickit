@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from importlib.util import find_spec
 from math import isfinite
 from pathlib import Path
@@ -91,6 +91,14 @@ class Settings:
     image_model: str = ""
     image_api_base: str = ""
     image_timeout: float = 300
+    parts_backend: str = "local"
+    parts_database_url: str = field(default="", repr=False)
+
+    def __post_init__(self) -> None:
+        if self.parts_backend not in {"local", "postgres"}:
+            raise ValueError("BRICK_IT_PARTS_BACKEND must be local or postgres")
+        if self.parts_backend == "postgres" and not self.parts_database_url:
+            raise ValueError("BRICK_IT_PARTS_DATABASE_URL is required for the postgres parts backend")
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -124,6 +132,8 @@ class Settings:
             image_model=os.environ.get("BRICK_IT_IMAGE_MODEL", "").strip(),
             image_api_base=os.environ.get("BRICK_IT_IMAGE_API_BASE", "").strip(),
             image_timeout=bounded_env("BRICK_IT_IMAGE_TIMEOUT", 300, 30, 1800),
+            parts_backend=os.environ.get("BRICK_IT_PARTS_BACKEND", "local").strip().lower() or "local",
+            parts_database_url=os.environ.get("BRICK_IT_PARTS_DATABASE_URL", "").strip(),
         )
 
     @property

@@ -1,5 +1,7 @@
 import { createSongenPieces, SONGEN_EXAMPLE } from './examples/songen.js';
 import { GENERATED_EXAMPLES } from './examples/generated.js';
+import { projectStorage } from './project-storage.js';
+export { LibraryStorageError } from './project-storage.js';
 
 /**
  * brick.it's browser-local model and curated sample-part data.
@@ -78,28 +80,35 @@ function validateMeshPart(part) {
   }
 }
 
+function validatedPartIds(parts) {
+  if (!Array.isArray(parts)) throw new TypeError('作品零件目录必须是数组。');
+  const ids = new Set();
+  for (const part of parts) {
+    validateMeshPart(part);
+    if (ids.has(part.id)) throw new TypeError(`作品包含重复的零件编号：${part.id}`);
+    ids.add(part.id);
+  }
+  return ids;
+}
+
 /** Validate before registering anything: a failed import leaves the catalog intact.
  * Meshes stay in the worker's centered, Y-up UI coordinates. No box substitution,
  * re-centering, scaling, color availability claim, or physics certification occurs.
  */
-export function registerProjectParts(project) {
+export function registerProjectParts(project, { replace = true } = {}) {
   if (!project || typeof project !== 'object') throw new TypeError('作品数据无效。');
-  if (project.parts !== undefined && !Array.isArray(project.parts)) throw new TypeError('作品零件目录必须是数组。');
-  const incoming = project.parts || [], seen = new Set();
-  for (const part of incoming) {
-    validateMeshPart(part);
-    if (seen.has(part.id)) throw new TypeError(`作品包含重复的零件编号：${part.id}`);
-    seen.add(part.id);
-  }
-  for (const pieces of [project.pieces, project.originalPieces ?? undefined]) {
+  const incoming = project.parts === undefined ? [] : project.parts;
+  const ids = validatedPartIds(incoming);
+  const originalIds = project.originalParts === undefined ? ids : validatedPartIds(project.originalParts);
+  for (const [pieces, allowed] of [[project.pieces, ids], [project.originalPieces ?? undefined, originalIds]]) {
     if (pieces === undefined) continue;
     if (!Array.isArray(pieces)) throw new TypeError('作品积木数据必须是数组。');
     for (const piece of pieces) {
       if (!hasValidGeometry(piece)) throw new TypeError('作品包含无效的位置、旋转或尺寸。');
-      if ((piece.shape === 'mesh' || piece.ldrawId || String(piece.partId || '').startsWith('ldraw-')) && !seen.has(piece.partId)) throw new TypeError(`作品缺少零件 ${piece.partId || piece.ldrawId} 的原始网格。`);
+      if ((piece.shape === 'mesh' || piece.ldrawId || String(piece.partId || '').startsWith('ldraw-')) && !allowed.has(piece.partId)) throw new TypeError(`作品缺少零件 ${piece.partId || piece.ldrawId} 的原始网格。`);
     }
   }
-  const registered = incoming.map(part => {
+  const registered = incoming.filter(part => replace || !projectPartIndex.has(part.id)).map(part => {
     const copy = cloneProject(part);
     copy.categoryName ||= categoryNames[copy.category] || '官方零件';
     copy.colors = Object.freeze(copy.colors);
@@ -215,24 +224,50 @@ export function cloneProject(project) {
 }
 // Keep the generation/template baseline inside every draft so it survives reloads
 // and the removal of an earlier saved version. Bundled-example drafts can be repaired.
-export async function resolveOriginalPieces(project, getProject = id => library.get(id)) {
-  const visited=new Set();
+async function resolveOriginalModel(project, getProject) {
+  const visited=new Set(), examples=new Set();
   let current=project;
   for(let depth=0;current&&depth<60;depth++) {
-    if(Array.isArray(current.originalPieces))return cloneProject(current.originalPieces);
+    if(Array.isArray(current.originalPieces))return { pieces:current.originalPieces, parts:current.originalParts ?? current.parts };
     const builtinId=[current.exampleId,current.rootId,current.id].find(id=>builtinExampleIndex.has(id));
-    if(builtinId)return (await loadExampleProject(builtinId)).pieces;
-    if([current.exampleId,current.rootId,current.id].includes('apple-example'))return createLegacyApplePieces();
+    if(builtinId)examples.add(builtinId);
+    if([current.exampleId,current.rootId,current.id].includes('apple-example'))return { pieces:createLegacyApplePieces() };
     if(current.id&&visited.has(current.id))break;
     if(current.id)visited.add(current.id);
-    if(!current.draft&&!current.parentId&&(!current.rootId||current.rootId===current.id))return cloneProject(current.pieces);
+    if(!current.draft&&!current.parentId&&!current.removedBundledWork&&(!current.rootId||current.rootId===current.id)&&
+       (!builtinId||(current.id===builtinId&&current.pieces?.length))&&Array.isArray(current.pieces))return { pieces:current.pieces, parts:current.parts };
     const next=current.parentId&&!visited.has(current.parentId)?current.parentId:current.rootId&&!visited.has(current.rootId)?current.rootId:null;
     if(!next)break;
     current=await getProject(next);
     if(!current&&project.rootId&&!visited.has(project.rootId))current=await getProject(project.rootId);
   }
-  // A legacy draft with no remaining source cannot be truthfully reconstructed.
+  for (const id of examples) {
+    try {
+      const example = await loadExampleProject(id);
+      return { pieces:example.pieces, parts:example.parts };
+    } catch { /* A legacy draft can still open without a cached example. */ }
+  }
   return null;
+}
+
+async function readOriginalSource(id) {
+  try { return (await projectStorage.read(id))?.project; } catch { return null; }
+}
+
+export async function resolveOriginalPieces(project, getProject = readOriginalSource) {
+  const original = await resolveOriginalModel(project, getProject);
+  return original ? cloneProject(original.pieces) : null;
+}
+
+async function recoverOriginalModel(project) {
+  if (Array.isArray(project.originalPieces) || project.removedBundledWork) return false;
+  const original = await resolveOriginalModel(project, readOriginalSource);
+  if (!original) return false;
+  const originalIds = new Set(original.pieces.map(piece => piece.partId));
+  const originalParts = (original.parts || []).filter(part => originalIds.has(part.id));
+  project.originalPieces = cloneProject(original.pieces);
+  if (originalParts.length && original.parts !== project.parts) project.originalParts = cloneProject(originalParts);
+  return true;
 }
 export function createPiece(partOrId, color, position = {}) {
   position = position && typeof position === 'object' ? position : {};
@@ -251,10 +286,10 @@ export function createPiece(partOrId, color, position = {}) {
 }
 
 /** Rotations share a catalog identity, while different colors/heights remain separate. */
-export function inventoryFor(pieces = []) {
-  const rows=new Map();
+export function inventoryFor(pieces = [], parts = []) {
+  const rows=new Map(), projectParts=new Map(parts.map(part=>[part.id,part]));
   for(const piece of pieces) {
-    const partId=canonicalPartId(piece),part=findPart(partId);
+    const partId=canonicalPartId(piece),part=projectParts.get(partId)||findPart(partId);
     const ldrawId=piece.ldrawId||part?.ldrawId;
     const [w,d]=ldrawId?[numberOr(piece.w,1),numberOr(piece.d,1)]:[numberOr(piece.w,1),numberOr(piece.d,1)].sort((a,b)=>a-b);
     const h=numberOr(piece.h,BRICK_HEIGHT),color=normalizeColor(piece.color);
@@ -340,65 +375,6 @@ export function canPlace(pieces = [],candidate,ignoreId) {
   return {ok:true,reason:''};
 }
 
-const DATABASE_NAME='brick-it-library';
-const DATABASE_VERSION=1;
-const STORE_NAME='projects';
-const FALLBACK_KEY='brick.it.library.v1';
-let dbPromise, idbUnavailable=false, activeBackend='indexeddb';
-export class LibraryStorageError extends Error {
-  constructor(message,cause){super(message);this.name='LibraryStorageError';if(cause)this.cause=cause}
-}
-function openDatabase() {
-  if(idbUnavailable||typeof indexedDB==='undefined')return Promise.reject(new Error('IndexedDB unavailable'));
-  if(dbPromise)return dbPromise;
-  dbPromise=new Promise((resolve,reject)=>{
-    let settled=false;
-    const timer=setTimeout(()=>finish(false,new Error('IndexedDB open timeout')),3500);
-    function finish(ok,value){if(settled){if(ok)value.close();return}settled=true;clearTimeout(timer);ok?resolve(value):reject(value)}
-    let request;
-    try{request=indexedDB.open(DATABASE_NAME,DATABASE_VERSION)}catch(error){finish(false,error);return}
-    request.onupgradeneeded=()=>{const database=request.result;if(!database.objectStoreNames.contains(STORE_NAME))database.createObjectStore(STORE_NAME,{keyPath:'id'})};
-    request.onsuccess=()=>{const database=request.result;database.onversionchange=()=>{database.close();dbPromise=undefined};finish(true,database)};
-    request.onerror=()=>finish(false,request.error||new Error('IndexedDB open failed'));
-    request.onblocked=()=>finish(false,new Error('IndexedDB blocked'));
-  }).catch(error=>{dbPromise=undefined;throw error});
-  return dbPromise;
-}
-async function indexedOperation(mode,operation) {
-  const database=await openDatabase();
-  return new Promise((resolve,reject)=>{
-    let transaction,result;
-    try{
-      transaction=database.transaction(STORE_NAME,mode);
-      const request=operation(transaction.objectStore(STORE_NAME));
-      request.onsuccess=()=>{result=request.result};
-      request.onerror=()=>reject(request.error||new Error('IndexedDB request failed'));
-      transaction.oncomplete=()=>resolve(result);
-      transaction.onerror=()=>reject(transaction.error||new Error('IndexedDB transaction failed'));
-      transaction.onabort=()=>reject(transaction.error||new Error('IndexedDB transaction aborted'));
-    }catch(error){reject(error)}
-  });
-}
-function fallbackRecords() {
-  let storage;
-  try { storage=globalThis.localStorage; if(!storage)throw new Error('Local storage unavailable'); }
-  catch(error){throw new LibraryStorageError('此浏览器无法保存作品，请允许网站使用本地存储后再试。',error)}
-  let parsed;
-  try{const raw=storage.getItem(FALLBACK_KEY);if(!raw)return [];parsed=JSON.parse(raw)}catch(error){throw new LibraryStorageError('本地作品暂时无法读取，请检查浏览器存储设置后重试。',error)}
-  if(!parsed||parsed.version!==1||!Array.isArray(parsed.projects))throw new LibraryStorageError('本地作品数据格式无法识别；原有记录未被覆盖。');
-  return parsed.projects;
-}
-function writeFallback(records) {
-  try{localStorage.setItem(FALLBACK_KEY,JSON.stringify({version:1,projects:records}))}
-  catch(error){throw new LibraryStorageError('作品未能保存：本地存储空间不足或已被禁用，请导出作品或腾出空间后重试。',error)}
-}
-async function withFallback(mode,operation,fallback) {
-  if(!idbUnavailable) {
-    try{const result=await indexedOperation(mode,operation);activeBackend='indexeddb';return result}
-    catch{ idbUnavailable=true;activeBackend='localstorage'; }
-  }
-  return fallback();
-}
 function sortedProjects(projects) {
   return projects.map(cloneProject).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))||String(a.id).localeCompare(String(b.id)));
 }
@@ -419,27 +395,30 @@ function prepareProject(project) {
   return copy;
 }
 export const library = {
-  /** Storage is local to this browser, never an account/cloud synchronization. */
-  get backend(){return activeBackend},
-  async list(){const projects=sortedProjects(await withFallback('readonly',store=>store.getAll(),()=>fallbackRecords()));for(const project of projects)registerProjectParts(project);return projects},
-  async get(id){
-    const key=String(id);
-    const project=await withFallback('readonly',store=>store.get(key),()=>fallbackRecords().find(item=>item.id===key));
-    if(!project)return null;
-    const copy=cloneProject(project);registerProjectParts(copy);return copy;
+  get backend() { return projectStorage.backend; },
+  async list() {
+    const projects = sortedProjects(await projectStorage.list());
+    for (const project of projects) registerProjectParts(project, { replace: false });
+    return projects;
   },
-  async put(project){
-    const copy=prepareProject(project);
-    await withFallback('readwrite',store=>store.put(copy),()=>{
-      const records=fallbackRecords(),index=records.findIndex(item=>item.id===copy.id);
-      if(index<0)records.push(copy);else records[index]=copy;
-      writeFallback(records);return copy.id;
-    });
+  async get(id) {
+    const snapshot = await projectStorage.read(String(id));
+    if (!snapshot) return null;
+    const project = cloneProject(snapshot.project);
+    const recovered = await recoverOriginalModel(project);
+    registerProjectParts(project);
+    // Opening remains possible if migration is blocked by quota or a concurrent tab.
+    try { await projectStorage.migrate(snapshot, project, recovered); } catch { /* Retry on a later open or save. */ }
+    return project;
+  },
+  async put(project) {
+    const copy = prepareProject(project);
+    if (await recoverOriginalModel(copy)) registerProjectParts(copy);
+    await projectStorage.save(copy);
     return cloneProject(copy);
   },
-  async remove(id){
-    const key=String(id);
-    await withFallback('readwrite',store=>store.delete(key),()=>writeFallback(fallbackRecords().filter(item=>item.id!==key)));
+  async remove(id) {
+    await projectStorage.remove(String(id));
     return true;
   }
 };

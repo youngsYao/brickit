@@ -8,6 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = (
@@ -24,10 +25,18 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--records-dir", type=Path, default=ROOT / ".brick-it-records")
     args = parser.parse_args()
+
+    if not __package__:
+        sys.path.insert(0, str(ROOT))
+    from server.config import Settings
+    from server.mesh_assets import PostgresMeshStore
+    from server.storage import JobStore
+
+    store = JobStore(args.records_dir, mesh_store=PostgresMeshStore.for_url(Settings.from_env().parts_database_url))
     manifest = []
     for definition in EXAMPLES:
         source = args.records_dir / definition["jobId"]
-        project = json.loads((source / "project.json").read_text())
+        project = store.read_project(definition["jobId"])
         job = json.loads((source / "job.json").read_text())
         report = json.loads((source / "artifacts/report.json").read_text())
         validation = project["generation"]["validation"]

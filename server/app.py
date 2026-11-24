@@ -17,8 +17,10 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import ROOT, Settings
 from .jobs import JobManager, ServiceError
+from .mesh_assets import PostgresMeshStore
 from .schemas import GenerationRequest
-from .parts import router as parts_router
+from .parts import create_router as create_parts_router
+from .parts_postgres import PostgresCatalogue
 from .ai_settings import AISettings, ModelsRequest, SaveSettingsRequest
 
 LOGGER = logging.getLogger("brick_it")
@@ -27,19 +29,29 @@ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
 
 def create_app(settings: Settings | None = None, *, manager: JobManager | None = None, env_path: Path | None = None) -> FastAPI:
     settings = settings or Settings.from_env()
-    manager = manager or JobManager(settings)
+    catalogue = PostgresCatalogue(settings.parts_database_url) if settings.parts_backend == "postgres" else None
+    mesh_store = PostgresMeshStore(catalogue.pool.connection) if catalogue else None
+    manager = manager or JobManager(settings, mesh_store=mesh_store)
     ai_settings = AISettings(manager, env_path)
 
     @asynccontextmanager
     async def lifespan(app):
-        await manager.start()
-        yield
-        await manager.close()
+        if catalogue:
+            catalogue.open()
+        try:
+            await manager.start()
+            try:
+                yield
+            finally:
+                await manager.close()
+        finally:
+            if catalogue:
+                await asyncio.to_thread(catalogue.close)
 
     app = FastAPI(title="brick.it local generation", lifespan=lifespan)
     app.state.jobs = manager
     app.state.ai_settings = ai_settings
-    app.include_router(parts_router)
+    app.include_router(create_parts_router(list_catalogue=catalogue.list if catalogue else None, mesh_store=mesh_store))
 
     @app.middleware("http")
     async def local_requests(request: Request, call_next):
@@ -137,7 +149,7 @@ def create_app(settings: Settings | None = None, *, manager: JobManager | None =
 
     @app.get("/api/generations/{job_id}")
     async def generation(job_id: str):
-        return manager.get(job_id)
+        return await asyncio.to_thread(manager.get, job_id)
 
     @app.delete("/api/generations/{job_id}")
     async def cancel_generation(job_id: str):

@@ -11,6 +11,7 @@ import copy
 import os
 import re
 from collections import Counter
+from collections.abc import Callable
 from functools import cached_property, lru_cache
 from pathlib import Path, PurePosixPath
 
@@ -19,15 +20,40 @@ from fastapi.responses import FileResponse, JSONResponse
 
 from .exporter import ExportRejected, LDU_SCALE, export_project
 from .jobs import ServiceError
+from .mesh_assets import PostgresMeshStore
 
 DEFAULT_LIBRARY = Path.home() / ".cache" / "brick-it" / "ldraw"
 SAFE_PART_ID = re.compile(r"^[a-zA-Z0-9][a-zA-Z0-9_.+\-]{0,99}$")
+PART_ID_PREFIX = re.compile(r"[a-z]*\d+[a-z0-9]*")
 QUERY_TRANSLATIONS = {
     "砖": "brick", "砖块": "brick", "标准砖": "brick", "薄板": "plate",
     "板": "plate", "光面砖": "tile", "斜坡": "slope", "斜坡件": "slope",
     "轮胎": "tyre", "轮子": "wheel", "人仔": "minifig", "窗": "window",
     "门": "door", "基础板": "baseplate", "齿轮": "gear", "技术梁": "technic beam",
 }
+
+
+def normalize_search(query: str) -> tuple[str, str]:
+    query = query.strip().lower()
+    part_id = query.removeprefix("ldraw-").removesuffix(".dat")
+    normalized = QUERY_TRANSLATIONS.get(query, query)
+    return part_id, re.sub(r"(?<=\d)[x×](?=\d)", " x ", normalized)
+
+
+def part_metadata(ldraw_id: str, name: str, category_name: str, w: float, d: float, h: float) -> dict:
+    return {
+        "id": f"ldraw-{ldraw_id}", "ldrawId": ldraw_id,
+        "name": name, "category": category_name.lower(), "categoryName": category_name,
+        "w": w, "d": d, "h": h, "description": f"LDraw {ldraw_id} · {name}",
+    }
+
+
+def catalogue_page(items: list[dict], categories: list[dict], *, total: int, library_total: int,
+                   catalogue_total: int, offset: int, limit: int) -> dict:
+    return {"available": True, "total": total, "libraryTotal": library_total,
+            "categories": categories, "items": items, "offset": offset, "limit": limit,
+            "hasMore": offset + limit < total, "catalogueTotal": catalogue_total,
+            "metadataSource": "BrickLayer + official LDraw library"}
 
 
 def resolve_library_root(explicit: Path | None = None) -> Path | None:
@@ -42,8 +68,9 @@ def resolve_library_root(explicit: Path | None = None) -> Path | None:
 
 
 class PartsService:
-    def __init__(self, library_root: Path | None = None):
+    def __init__(self, library_root: Path | None = None, *, mesh_store: PostgresMeshStore | None = None):
         self.library_root = resolve_library_root(library_root)
+        self.mesh_store = mesh_store
 
     @cached_property
     def library_ids(self) -> frozenset[str]:
@@ -80,12 +107,8 @@ class PartsService:
         from bricklayer.ldraw import partdata
 
         extent = partdata.measured_extents(spec.ldraw_id)
-        return {
-            "id": f"ldraw-{spec.ldraw_id}", "ldrawId": spec.ldraw_id,
-            "name": spec.name, "category": spec.category.lower(), "categoryName": spec.category,
-            "w": float(extent.x), "d": float(extent.y), "h": float(extent.z) * 24 * LDU_SCALE,
-            "description": f"LDraw {spec.ldraw_id} · {spec.name}",
-        }
+        return part_metadata(spec.ldraw_id, spec.name, spec.category,
+                             float(extent.x), float(extent.y), float(extent.z) * 24 * LDU_SCALE)
 
     @lru_cache(maxsize=128)
     def _matching(self, q: str, category: str) -> tuple:
@@ -95,11 +118,8 @@ class PartsService:
         accepted = lambda spec: category in {"", "all"} or spec.category.lower() == category
         if not q:
             return tuple(spec for spec in self.catalogue if accepted(spec))
-        query = q.strip().lower()
-        part_id = query.removeprefix("ldraw-").removesuffix(".dat")
+        part_id, normalized = normalize_search(q)
         exact = self.by_id.get(part_id)
-        normalized = QUERY_TRANSLATIONS.get(query, query)
-        normalized = re.sub(r"(?<=\d)[x×](?=\d)", " x ", normalized)
         if not re.search(r"[a-z0-9]", normalized):
             return ()
         # Ask the official SDK for all matches so total and pagination describe
@@ -110,7 +130,7 @@ class PartsService:
         if exact and accepted(exact):
             output.append(exact)
             seen.add(exact.ldraw_id)
-        if re.fullmatch(r"[a-z]*\d+[a-z0-9]*", part_id):
+        if PART_ID_PREFIX.fullmatch(part_id):
             for spec in self.catalogue:
                 if spec.ldraw_id.lower().startswith(part_id) and accepted(spec) and spec.ldraw_id not in seen:
                     output.append(spec)
@@ -130,11 +150,9 @@ class PartsService:
             return {**base, "reason": "尚未安装 LDraw 零件库。请下载官方零件库并设置 LDRAW_LIBRARY_PATH。"}
         try:
             matches = self._matching(q.strip(), category)
-            return {**base, "available": True, "total": len(matches),
-                    "categories": self.categories,
-                    "items": [copy.deepcopy(self.metadata(spec)) for spec in matches[offset:offset + limit]],
-                    "hasMore": offset + limit < len(matches),
-                    "catalogueTotal": len(self.catalogue), "metadataSource": "BrickLayer + official LDraw library"}
+            items = [copy.deepcopy(self.metadata(spec)) for spec in matches[offset:offset + limit]]
+            return catalogue_page(items, self.categories, total=len(matches), library_total=len(self.library_ids),
+                                  catalogue_total=len(self.catalogue), offset=offset, limit=limit)
         except ImportError as exc:
             raise ServiceError("PARTS_UNAVAILABLE", "零件 SDK 尚未安装，请运行 uv sync。", 503) from exc
 
@@ -181,20 +199,28 @@ class PartsService:
         if not SAFE_PART_ID.fullmatch(part_id) or part_id.lower() not in self.by_id:
             raise ServiceError("PART_NOT_FOUND", "此零件没有可用的 SDK 网格。", 404)
         spec = self.by_id[part_id.lower()]
-        try:
+
+        def local_descriptor() -> dict:
             return copy.deepcopy(self._descriptor(spec.ldraw_id))
+
+        try:
+            if self.mesh_store is not None:
+                return self.mesh_store.editor_descriptor(spec.ldraw_id, local_descriptor)
+            return local_descriptor()
         except ExportRejected as exc:
             raise ServiceError("UNSUPPORTED_PART", "此零件超出当前工作台支持范围，可在仓库查看完整 LDraw 预览。", 422) from exc
         except (LookupError, ValueError) as exc:
             raise ServiceError("UNSUPPORTED_PART", "此零件没有可用的工作台网格，可在仓库查看 LDraw 预览。", 422) from exc
 
 
-def create_router(service: PartsService | None = None) -> APIRouter:
+def create_router(service: PartsService | None = None, *,
+                  list_catalogue: Callable[[str, str, int, int], dict] | None = None,
+                  mesh_store: PostgresMeshStore | None = None) -> APIRouter:
     router = APIRouter()
 
     @lru_cache(maxsize=1)
     def get_service() -> PartsService:
-        return service or PartsService()
+        return service or PartsService(mesh_store=mesh_store)
 
     def error(exc: ServiceError):
         return JSONResponse({"error": {"code": exc.code, "message": exc.message}}, status_code=exc.status)
@@ -203,7 +229,8 @@ def create_router(service: PartsService | None = None) -> APIRouter:
     def parts(q: str = Query(default="", max_length=200), category: str = Query(default="", max_length=100),
               offset: int = Query(default=0, ge=0, le=100000), limit: int = Query(default=24, ge=1, le=60)):
         try:
-            return get_service().list(q, category, offset, limit)
+            read_page = list_catalogue or get_service().list
+            return read_page(q, category, offset, limit)
         except ServiceError as exc:
             return error(exc)
 
@@ -223,6 +250,3 @@ def create_router(service: PartsService | None = None) -> APIRouter:
             return error(exc)
 
     return router
-
-
-router = create_router()

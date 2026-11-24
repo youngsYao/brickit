@@ -11,6 +11,7 @@ import uuid
 from pathlib import Path
 
 from .config import ROOT, Settings
+from .mesh_assets import MeshStorageError, PostgresMeshStore
 from .schemas import GenerationRequest
 from .storage import TERMINAL, JobStore, atomic_json, now
 
@@ -25,9 +26,10 @@ class ServiceError(Exception):
 
 
 class JobManager:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, mesh_store: PostgresMeshStore | None = None):
         self.settings = settings
-        self.store = JobStore(settings.records_dir)
+        meshes = mesh_store or PostgresMeshStore.for_url(settings.parts_database_url)
+        self.store = JobStore(settings.records_dir, mesh_store=meshes)
         self.tasks: dict[str, asyncio.Task] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
 
@@ -90,6 +92,8 @@ class JobManager:
                 path = self.store.path(job_id)
                 complete = (path / "project.json").is_file() and all((path / "artifacts" / n).is_file() for n in ARTIFACTS)
             if complete:
+                if self.settings.parts_backend == "postgres":
+                    await asyncio.to_thread(self.store.compact_project, job_id)
                 self.store.update(job_id, "completed", "模型已完成并通过 BrickLayer 校验。")
             else:
                 code = outcome.get("code", "WORKER_FAILED")
@@ -136,9 +140,9 @@ class JobManager:
             pass
         await process.wait()
 
-    def get(self, job_id: str) -> dict:
+    def get(self, job_id: str, *, include_result: bool = True) -> dict:
         try:
-            record = self.store.read(job_id)
+            record = self.store.read(job_id, include_result=include_result)
             path = self.store.path(job_id)
             if (path / "reference.json").is_file() and all((path / name).is_file() for name in REFERENCE_ARTIFACTS):
                 # Construct URLs from an allowlist, never from provider metadata.
@@ -151,9 +155,11 @@ class JobManager:
             return record
         except KeyError as exc:
             raise ServiceError("NOT_FOUND", "找不到这个生成任务。", 404) from exc
+        except MeshStorageError:
+            raise ServiceError("MESH_STORAGE_UNAVAILABLE", "暂时无法读取这个模型的零件网格，请检查 PostgreSQL 连接后重试。", 503) from None
 
     async def cancel(self, job_id: str) -> dict:
-        record = self.get(job_id)
+        record = self.get(job_id, include_result=False)
         task = self.tasks.get(job_id)
         if record["status"] not in TERMINAL:
             if task:
@@ -163,10 +169,10 @@ class JobManager:
                 except asyncio.CancelledError:
                     pass
             self.store.update(job_id, "cancelled", "生成已取消。")
-        return self.get(job_id)
+        return await asyncio.to_thread(self.get, job_id)
 
     def artifact(self, job_id: str, name: str) -> Path:
-        record = self.get(job_id)
+        record = self.get(job_id, include_result=False)
         if name in REFERENCE_ARTIFACTS and record.get("referenceImages", {}).get("ready"):
             return self.store.path(job_id) / name
         if name not in ARTIFACTS or record["status"] != "completed":
